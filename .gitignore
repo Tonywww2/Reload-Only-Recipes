@@ -1,0 +1,45 @@
+# ===== Gradle =====
+.gradle/
+build/
+
+# ===== IntelliJ IDEA =====
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# ===== Eclipse =====
+.classpath
+.project
+.settings/
+bin/
+*.launch
+
+# ===== VS Code =====
+.vscode/
+
+# ===== Minecraft dev runtime =====
+run/
+runs/
+
+# ===== Architectury Loom =====
+.architectury-transformer/
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== Logs =====
+*.log
+
+# ---------------------------------------------------------------------------
+# Notes:
+# - `.gradle/`, `build/`, `run/` have no leading slash, so they match at every
+#   depth (root AND versions/<node>/...), covering Stonecutter's per-version
+#   generated directories.
+# - versions/<node>/gradle.properties are SOURCE files (dependency versions and
+#   loom.platform) and MUST stay tracked — do not ignore them.
+# - gradle/wrapper/gradle-wrapper.jar is intentionally NOT ignored (no *.jar
+#   rule) so `gradlew` keeps working after clone.
+# ---------------------------------------------------------------------------

@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.example.reloadonlyrecipes.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "reloadonlyrecipes.refmap.json",
+  "plugin": "com.example.reloadonlyrecipes.mixin.ReloadOnlyRecipesMixinPlugin",
+  "mixins": [
+    "RecipeManagerInvoker"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "commands.reloadonlyrecipes.reload.start": "Reloading recipes...",
+  "commands.reloadonlyrecipes.reload.success": "Reloaded %1$s recipes in %2$s ms",
+  "commands.reloadonlyrecipes.reload.failed": "Failed to reload recipes: %s",
+  "commands.reloadonlyrecipes.reload.fallback": "KubeJS reload failed, fell back to vanilla; reloaded %1$s recipes in %2$s ms"
+}

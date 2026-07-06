@@ -1,0 +1,6 @@
+{
+  "commands.reloadonlyrecipes.reload.start": "正在重载配方……",
+  "commands.reloadonlyrecipes.reload.success": "已重载 %1$s 条配方，耗时 %2$s 毫秒",
+  "commands.reloadonlyrecipes.reload.failed": "配方重载失败：%s",
+  "commands.reloadonlyrecipes.reload.fallback": "KubeJS 重载失败，已回落到原版；已重载 %1$s 条配方，耗时 %2$s 毫秒"
+}
