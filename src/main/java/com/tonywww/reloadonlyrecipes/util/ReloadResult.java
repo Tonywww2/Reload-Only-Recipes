@@ -1,9 +1,9 @@
-package com.example.reloadonlyrecipes.util;
+package com.tonywww.reloadonlyrecipes.util;
 
 /**
  * 一次 {@code /reloadrecipes} 的结果统计（PE-1）。
  *
- * <p>由门面 {@link com.example.reloadonlyrecipes.reload.RecipeReloadService} 产出，
+ * <p>由门面 {@link com.tonywww.reloadonlyrecipes.reload.RecipeReloadService} 产出，
  * 供命令反馈（成功 / 回落文案的条数与耗时）与日志诊断使用。
  *
  * @param recipeCount     重载后服务端配方总条数

@@ -1,16 +1,16 @@
-package com.example.reloadonlyrecipes.reload;
+package com.tonywww.reloadonlyrecipes.reload;
 
-import com.example.reloadonlyrecipes.ModConstants;
-import com.example.reloadonlyrecipes.util.ReloadResult;
+import com.tonywww.reloadonlyrecipes.ModConstants;
+import com.tonywww.reloadonlyrecipes.util.ReloadResult;
 import com.mojang.logging.LogUtils;
 import net.minecraft.server.MinecraftServer;
 import org.slf4j.Logger;
 //? if forge {
 /*import net.minecraftforge.fml.ModList;
-import com.example.reloadonlyrecipes.compat.kubejs.KubeJs6RecipeReloadStrategy;
+import com.tonywww.reloadonlyrecipes.compat.kubejs.KubeJs6RecipeReloadStrategy;
 *///?} else {
 import net.neoforged.fml.ModList;
-import com.example.reloadonlyrecipes.compat.kubejs.KubeJs7RecipeReloadStrategy;
+import com.tonywww.reloadonlyrecipes.compat.kubejs.KubeJs7RecipeReloadStrategy;
 //?}
 
 /**

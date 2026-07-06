@@ -31,7 +31,7 @@
 | ☑ T0.8 | **落地版本号**：NeoForge 21.1.x、Loom 版本、KubeJS 6/7 构建号（见「待验证项」R1） | S | T0.6 | 版本号确定并回写属性 | `versions/*/gradle.properties` |
 | ☑ T0.9 | mod 主类 `@Mod`（`//? if` 隔离 forge/neoforge 总线 import） | M | T0.6 | 两版加载打印 `ReloadOnlyRecipes loaded` | `.../ReloadOnlyRecipes.java` |
 | ☑ T0.10 | 元数据 `mods.toml` + `neoforge.mods.toml`（`modLoader=javafml`、`expand` 占位、KubeJS 软依赖声明） | M | T0.9 | `processResources` 输出正确、仅保留当前 loader 文件 | `META-INF/*.toml` |
-| ☐ T0.11 | **验证 M0**：两版 `build` 绿 + `runClient` 进标题页/世界 | M | T0.9,T0.10 | `run/` 日志无 `Exception`，见 mod 已加载 | — |
+| ☑ T0.11 | **验证 M0**：两版 `build` 绿 + `runClient` 进标题页/世界 | M | T0.9,T0.10 | 两版 runClient 均 `ReloadOnlyRecipes loaded` 抵主菜单、无 Exception（Agent1 运行验证） | — |
 
 ---
 
@@ -55,7 +55,7 @@
 | ☑ T2.2 | `VanillaRecipeReloadStrategy`：`scan()`（`FileToIdConverter.json("recipes")`）+ `invokeApply` | M | T1.5,T2.1 | 扫描出全部来源配方并重建 | `.../reload/VanillaRecipeReloadStrategy.java` |
 | ☐ T2.3 | `RecipeSync`：`ClientboundUpdateRecipesPacket` + `sendInitialRecipeBook`（两版一致） | M | T2.2 | 在线客户端配方书/JEI 刷新 | `.../reload/RecipeSync.java` |
 | ☑ T2.4 | `/reloadrecipes` 命令注册（`RegisterCommandsEvent`，`//? if` 隔离 import，权限 2，成功反馈） | M | T2.1 | 命令可执行、有反馈、OP 限制 | `.../command/…`、主类事件 |
-| ☐ T2.5 | **验证 M1**：无 KubeJS，改数据包 JSON 配方 → 执行命令 → 服务端与客户端均更新（两版） | M | T2.2–T2.4 | 配方变更即时生效、JEI/REI 刷新 | — |
+| ☐ T2.5 | **验证 M1**：无 KubeJS，改数据包 JSON 配方 → 执行命令 → 服务端与客户端均更新（两版） | M | T2.2–T2.4 | **Forge 服务端已通过**（runServer `/reloadrecipes` → 1174 配方 50ms 重建、mixin `@Invoker` 生效、翻译正常）；NeoForge / 客户端 JEI·REI 刷新 / 改包即时生效待测 | — |
 
 ---
 

@@ -1,4 +1,4 @@
-package com.example.reloadonlyrecipes.reload;
+package com.tonywww.reloadonlyrecipes.reload;
 
 import net.minecraft.server.MinecraftServer;
 

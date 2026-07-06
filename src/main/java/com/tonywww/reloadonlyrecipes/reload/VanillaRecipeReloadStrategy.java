@@ -1,6 +1,6 @@
-package com.example.reloadonlyrecipes.reload;
+package com.tonywww.reloadonlyrecipes.reload;
 
-import com.example.reloadonlyrecipes.mixin.RecipeManagerInvoker;
+import com.tonywww.reloadonlyrecipes.mixin.RecipeManagerInvoker;
 import com.google.gson.JsonElement;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;

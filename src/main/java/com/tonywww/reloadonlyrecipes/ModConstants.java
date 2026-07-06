@@ -1,4 +1,4 @@
-package com.example.reloadonlyrecipes;
+package com.tonywww.reloadonlyrecipes;
 
 /**
  * 全局常量（冻结约定，见 docs/parallel-tasks.md §2）。

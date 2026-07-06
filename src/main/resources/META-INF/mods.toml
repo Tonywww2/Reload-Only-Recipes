@@ -28,5 +28,6 @@ side = "BOTH"
 [[dependencies.${id}]]
 modId = "kubejs"
 mandatory = false
+versionRange = "[0,)"
 ordering = "AFTER"
 side = "BOTH"

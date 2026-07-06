@@ -1,4 +1,4 @@
-package com.example.reloadonlyrecipes.mixin;
+package com.tonywww.reloadonlyrecipes.mixin;
 
 import com.google.gson.JsonElement;
 import net.minecraft.resources.ResourceLocation;

@@ -38,9 +38,9 @@
 
 1. **扫描并解析** `data/<ns>/recipes/**.json` → `Map<ResourceLocation, JsonElement>`（`FileToIdConverter.json("recipes")` 递归扫描 `ResourceManager` 中所有已加载 pack）。
 2. **重建配方表**：调用 `recipeManager.apply(map, resourceManager, InactiveProfiler.INSTANCE)`。
-3. **同步客户端**：广播 `ClientboundUpdateRecipesPacket(recipeManager.getRecipes())` + 每个玩家 `getRecipeBook().sendInitialRecipeBook(player)`。
+3. **同步客户端**：广播 `ClientboundUpdateTagsPacket`（内容不变）+ `ClientboundUpdateRecipesPacket(recipeManager.getRecipes())` + 每个玩家 `getRecipeBook().sendInitialRecipeBook(player)`。
 
-> 客户端收到 `ClientboundUpdateRecipesPacket` 会触发 `RecipesUpdatedEvent`，JEI/REI 自动刷新。
+> **JEI 刷新机制（已核实 JEI 源码 `StartEventObserver`）**：JEI 需在同一周期内同时收到 `TagsUpdatedEvent` 与 `RecipesUpdatedEvent` 才会 restart 重载配方显示（`requiredEvents = {TagsUpdatedEvent, RecipesUpdatedEvent}`，`observedEvents.containsAll` 才触发）。只发 recipes 包 → 仅触发 `RecipesUpdatedEvent` → JEI **不刷新**。故须同时下发 tags 包凑齐两事件，等价原版 `/reload` 网络行为的子集；REI/EMI 同理。
 
 ### `apply` 的访问方式（不用反射、不用 AT）
 

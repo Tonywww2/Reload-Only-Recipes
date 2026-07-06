@@ -34,7 +34,7 @@
 ## 2. 共享约定（冻结 — 任何人不得擅改）
 
 - **modId** = `reloadonlyrecipes`
-- **根包** = `com.example.reloadonlyrecipes`（如需改 group，走 CR，全局统一）
+- **根包** = `com.tonywww.reloadonlyrecipes`（如需改 group，走 CR，全局统一）
 - **mixin 配置文件** = `reloadonlyrecipes.mixins.json`；**refmap** = `reloadonlyrecipes.refmap.json`
 - **翻译 key 前缀** = `reloadonlyrecipes.` / 命令反馈 `commands.reloadonlyrecipes.*`
 - **冻结接口签名**（阶段 A 产出，B/C/D 只读依赖）：
@@ -261,6 +261,8 @@ flowchart LR
 |---|---|---|---|---|
 | CR-1 | 2026-07-06 | Agent1 | PC-1 取消注释 build.gradle.kts 的 KubeJS `modCompileOnly`（PA-1 预留给阶段 C 的行）；两版 KubeJS 依赖启用（forge=kubejs-forge:2001.6.5、neoforge=kubejs-neoforge:2101.7.2） | 已实施：PA-1 注释明确「阶段 C 启用」，符合跨阶段接力约定 |
 | CR-2 | 2026-07-07 | Agent1 | PE-1 借用 `ModCommands`（PB-4 Owns）：修 `.failure`→`.failed` 既存 key bug、接门面返回的 `ReloadResult`（回落 `.fallback`/正常 `.success`/新增 `.start`）；门面 `reload` 返回类型 `void`→`ReloadResult`（§2 接口兼容性扩展） | 已实施：PB-5 产出明确「PE-1 须使用这些 key」，本改动对齐 lang 契约 + 完善回落反馈；两版编译通过 |
+| CR-3 | 2026-07-07 | Agent1 | **运行验证(Gate D)发现** mod 缺 `pack.mcmeta` → Forge/NeoForge 无法建 PackInfo、assets/data(lang)不加载（命令反馈显示原始 key）。新建 `src/main/resources/pack.mcmeta`（PA-1 遗漏，补建）；借 PA-1 Owns 改 `build.gradle.kts`（processResources 的 props 加 `pack_format`、filesMatching 加 `pack.mcmeta` 做 expand）+ 两版 `gradle.properties`（加 `pack_format`：1.20.1=15 / 1.21.1=34） | 已实施：两版 processResources 产出 pack.mcmeta 正确；Forge runServer 翻译生效 |
+| CR-4 | 2026-07-07 | Agent1 | **运行验证(Gate D)发现** Forge dev mixin 未应用（`ClassCastException`：`RecipeManager` 无法 cast `RecipeManagerInvoker`，接口没注入）。双根因：①`useLegacyMixinAp=true` 生成 SRG-default refmap（apply→m_5787_），与 Architectury Loom 的 Forge dev（named/Mojmap）运行时不符 → `@Invoker` 定位失败；②仅 mods.toml `[[mixins]]` 在 Loom dev 不注册 config。借 PA-1 Owns 改 `build.gradle.kts`：移除 `useLegacyMixinAp` + 加 `loom.forge.mixinConfig(...)`（仅 forge 平台条件启用） | 已实施：Forge runServer `/reloadrecipes` 端到端通过（1174 配方/50ms/无异常）。**推翻 PA-1「Forge dev 是 SRG 运行时」的假设**；NeoForge 侧待实证 |
 
 ---
 

@@ -1,8 +1,8 @@
-package com.example.reloadonlyrecipes.command;
+package com.tonywww.reloadonlyrecipes.command;
 
-import com.example.reloadonlyrecipes.ModConstants;
-import com.example.reloadonlyrecipes.reload.RecipeReloadService;
-import com.example.reloadonlyrecipes.util.ReloadResult;
+import com.tonywww.reloadonlyrecipes.ModConstants;
+import com.tonywww.reloadonlyrecipes.reload.RecipeReloadService;
+import com.tonywww.reloadonlyrecipes.util.ReloadResult;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.context.CommandContext;

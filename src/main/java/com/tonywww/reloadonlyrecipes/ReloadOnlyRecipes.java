@@ -1,4 +1,4 @@
-package com.example.reloadonlyrecipes;
+package com.tonywww.reloadonlyrecipes;
 
 //? if forge {
 /*import net.minecraftforge.fml.common.Mod;

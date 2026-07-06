@@ -31,7 +31,7 @@
 - 回落：`KubeJS 重载失败，已回落到原版；已重载 N 条配方，耗时 T 毫秒`
 - 失败：`配方重载失败：原因`
 
-> 客户端收到配方同步包（`ClientboundUpdateRecipesPacket`）后触发 `RecipesUpdatedEvent`，**JEI / REI 自动刷新**，无需额外操作。
+> **JEI / REI 会自动刷新配方显示**，无需额外操作（机制与副作用见下方“兼容性 · JEI / REI”）。
 
 ---
 
@@ -42,7 +42,9 @@
   - Forge 使用 **KubeJS 6**（`2001`）：重建干净资源管理器 + `ServerScriptManager.wrapResourceManager()`。
   - NeoForge 使用 **KubeJS 7**（`2101`）：`ServerScriptManager.reload()`（无需干净资源管理器）。
   - 兼容策略若异常，自动**回落原版策略**并告警（见上方“回落”反馈）。
-- **JEI / REI**：随配方同步包自动刷新。
+- **JEI / REI / EMI（配方显示刷新）**：`/reloadrecipes` 会**同时下发 tags 与 recipes 两个同步包**，在客户端触发 `TagsUpdatedEvent` + `RecipesUpdatedEvent`，配方查看器据此自动重载配方显示，无需额外操作。
+  - **为什么要发 tags 包**：JEI 的 `StartEventObserver` 要求在同一周期内**同时**观察到这两个事件才会重载（只发 recipes 包 → 仅触发 `RecipesUpdatedEvent` → JEI 不刷新）。这也是原版 `/reload` 能刷新 JEI 的原因（它同样发这两个包）。
+  - **副作用（可接受）**：额外的 tags 包会让客户端各 mod 触发一次 `TagsUpdatedEvent` 重建标签缓存；但下发的**标签内容不变、无磁盘 IO**，开销很小。此处 tags 包仅用于“凑齐事件让配方查看器刷新”，**并不重载标签数据**（标签数据仍需完整 `/reload`，见下方限制）。
 
 ---
 
@@ -50,7 +52,7 @@
 
 **只重载“配方”这一个 reload listener**，不触碰其它数据包内容：
 
-- **不重载 tags（标签）/ loot（战利品表）/ advancement（进度）/ function（函数）/ predicate 等** —— 这些仍需完整 `/reload`。若你改的配方依赖新的标签（tag），请连标签一起用 `/reload`。
+- **不重载 tags（标签）/ loot（战利品表）/ advancement（进度）/ function（函数）/ predicate 等** —— 这些仍需完整 `/reload`。若你改的配方依赖新的标签（tag），请连标签一起用 `/reload`。（注：命令为刷新 JEI 会下发一个 tags 同步包，但那只是**重发现有标签以凑齐客户端事件**，并不加载新的标签定义。）
 - **不覆盖 CraftTweaker 等 B 类 mod**：它们通过 `AddReloadListenerEvent` 注册独立监听器，不在 `apply` 链上，本命令**不会触发**其运行时配方修改。若依赖此类脚本改配方，请使用其自带重载或完整 `/reload`。
 - **内置配方的实时性（注意）**：文件夹型数据包实时读盘；`zip` / mod-jar 内置配方在无 KubeJS 的原版策略下可能读到旧文件句柄。KubeJS 策略会重新打开已选数据包，实时性更好。
 
@@ -62,7 +64,7 @@
 
 1. 扫描 recipes 目录下的 JSON，解析为配方 JSON 映射。
 2. 经 Mixin `@Invoker`（零反射）调用实例 `RecipeManager.apply` 整体重建配方表。
-3. 广播 `ClientboundUpdateRecipesPacket` + 重发配方书。
+3. 广播 `ClientboundUpdateTagsPacket`（内容不变）+ `ClientboundUpdateRecipesPacket` + 重发配方书 —— 前两个包在客户端触发 `TagsUpdatedEvent` + `RecipesUpdatedEvent`，使 JEI / REI 重载配方显示（详见上方“兼容性 · JEI / REI”）。
 
 工程约束：**避免 Java 反射**，改用带判断的 Mixin `@Invoker` + `modCompileOnly` 软依赖 + 类隔离 + Stonecutter 条件编译。KubeJS 6/7 两代 API 完全不同，兼容层按平台版本化隔离。
 

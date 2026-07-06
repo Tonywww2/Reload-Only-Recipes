@@ -57,7 +57,7 @@ org.gradle.jvmargs=-Xmx2G
 mod.id=reloadonlyrecipes
 mod.name=ReloadOnlyRecipes
 mod.version=0.1.0
-mod.group=com.example.reloadonlyrecipes
+mod.group=com.tonywww.reloadonlyrecipes
 ```
 
 `./versions/1.20.1-forge/gradle.properties`：
@@ -188,13 +188,13 @@ java {
 {
   "required": true,
   "minVersion": "0.8",
-  "package": "com.example.reloadonlyrecipes.mixin",
+  "package": "com.tonywww.reloadonlyrecipes.mixin",
   "compatibilityLevel": "JAVA_17",
   "refmap": "reloadonlyrecipes.refmap.json",
   "mixins": [
     "RecipeManagerInvoker"
   ],
-  "plugin": "com.example.reloadonlyrecipes.mixin.ReloadOnlyRecipesMixinPlugin"
+  "plugin": "com.tonywww.reloadonlyrecipes.mixin.ReloadOnlyRecipesMixinPlugin"
 }
 ```
 

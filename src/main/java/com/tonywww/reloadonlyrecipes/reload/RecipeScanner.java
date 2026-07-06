@@ -1,6 +1,6 @@
-package com.example.reloadonlyrecipes.reload;
+package com.tonywww.reloadonlyrecipes.reload;
 
-import com.example.reloadonlyrecipes.ReloadOnlyRecipes;
+import com.tonywww.reloadonlyrecipes.ReloadOnlyRecipes;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
@@ -24,7 +24,12 @@ import java.util.Map;
 public final class RecipeScanner {
 
     private static final Gson GSON = new GsonBuilder().setLenient().create();
-    private static final FileToIdConverter RECIPE_LISTER = FileToIdConverter.json("recipes");
+    // 数据包配方目录名两版不同：1.20.1=recipes（复数）；1.20.5+/1.21.1=recipe（单数，MC 目录单数化）。
+    //? if forge {
+    /*private static final FileToIdConverter RECIPE_LISTER = FileToIdConverter.json("recipes");
+    *///?} else {
+    private static final FileToIdConverter RECIPE_LISTER = FileToIdConverter.json("recipe");
+    //?}
 
     private RecipeScanner() {
     }

@@ -1,4 +1,4 @@
-package com.example.reloadonlyrecipes.mixin;
+package com.tonywww.reloadonlyrecipes.mixin;
 
 //? if forge {
 /*import net.minecraftforge.fml.loading.LoadingModList;

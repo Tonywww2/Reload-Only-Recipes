@@ -1,11 +1,11 @@
-package com.example.reloadonlyrecipes.compat.kubejs;
+package com.tonywww.reloadonlyrecipes.compat.kubejs;
 
-import com.example.reloadonlyrecipes.reload.RecipeReloadStrategy;
+import com.tonywww.reloadonlyrecipes.reload.RecipeReloadStrategy;
 import net.minecraft.server.MinecraftServer;
 //? if forge {
-/*import com.example.reloadonlyrecipes.mixin.RecipeManagerInvoker;
-import com.example.reloadonlyrecipes.reload.CleanServerResources;
-import com.example.reloadonlyrecipes.reload.RecipeScanner;
+/*import com.tonywww.reloadonlyrecipes.mixin.RecipeManagerInvoker;
+import com.tonywww.reloadonlyrecipes.reload.CleanServerResources;
+import com.tonywww.reloadonlyrecipes.reload.RecipeScanner;
 import dev.latvian.mods.kubejs.server.KubeJSReloadListener;
 import dev.latvian.mods.kubejs.server.ServerScriptManager;
 import net.minecraft.server.packs.resources.CloseableResourceManager;

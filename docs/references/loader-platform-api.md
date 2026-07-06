@@ -99,7 +99,16 @@ for (ServerPlayer p : server.getPlayerList().getPlayers()) {
 }
 ```
 
-> 客户端收到后触发 `RecipesUpdatedEvent`，JEI/REI 自动刷新（两版一致）。
+> **JEI/REI 刷新需 tags + recipes 两个包**（已核实 JEI `StartEventObserver`）：JEI 要求同一周期内同时收到 `TagsUpdatedEvent` + `RecipesUpdatedEvent` 才 restart 重载配方显示，只发 recipes 包不刷新。故 `RecipeSync` 额外下发一个 tags 包（内容不变）。
+>
+> **tags 包双版本差异**（1.20.5 网络重构把 tags 包从 `game` 移到 `common`）：
+>
+> | 项 | Forge 1.20.1 | NeoForge 1.21.1 |
+> | --- | --- | --- |
+> | `ClientboundUpdateTagsPacket` 包 | `net.minecraft.network.protocol.game` | `net.minecraft.network.protocol.common` |
+> | `TagNetworkSerialization.serializeTagsToNetwork(server.registries())` + 构造 | 相同写法 | 相同写法 |
+>
+> 仅 import 包路径需 Stonecutter `//? if` 隔离；构造与序列化调用两版一致（均已编译验证）。
 
 ---
 

@@ -1,10 +1,10 @@
-package com.example.reloadonlyrecipes.compat.kubejs;
+package com.tonywww.reloadonlyrecipes.compat.kubejs;
 
-import com.example.reloadonlyrecipes.reload.RecipeReloadStrategy;
+import com.tonywww.reloadonlyrecipes.reload.RecipeReloadStrategy;
 import net.minecraft.server.MinecraftServer;
 //? if neoforge {
-import com.example.reloadonlyrecipes.mixin.RecipeManagerInvoker;
-import com.example.reloadonlyrecipes.reload.RecipeScanner;
+import com.tonywww.reloadonlyrecipes.mixin.RecipeManagerInvoker;
+import com.tonywww.reloadonlyrecipes.reload.RecipeScanner;
 import com.google.gson.JsonElement;
 import dev.latvian.mods.kubejs.core.RecipeManagerKJS;
 import net.minecraft.resources.ResourceLocation;
