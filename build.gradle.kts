@@ -20,10 +20,22 @@ val javaVersion = if (stonecutter.eval(mcVersion, ">=1.20.6")) 21 else 17
 
 loom {
     silentMojangMappingsLicense()
-    // Mixin：交由 Loom 1.11 默认处理，**不配 mixin{} 块**——Loom 1.11 下配置 mixin AP 会强制
-    // 要求 useLegacyMixinAp=true，而 legacy AP 会给 Forge 生成 SRG-default refmap（apply→m_5787_），
-    // 与 named(Mojmap) dev 运行时不匹配、导致 @Invoker 失败。默认处理下 dev 用 named 名直接匹配、
-    // production 由 remapJar 自动 reobf；refmap 用默认名 <modid>.refmap.json（与 mixins.json 一致）。
+    // Mixin refmap 名必须与 mixins.json 的 "refmap" 字段（reloadonlyrecipes.refmap.json）一致。
+    // 【生产崩溃修复】Loom remapJar 会为 Forge 生成含 apply→m_5787_ 的 refmap，但若不显式指定名字，
+    // 就会用默认派生名 <archivesName>-refmap.json（如 reloadonlyrecipes-forge-1.20.1-forge-refmap.json），
+    // 与 mixins.json 硬编码的 reloadonlyrecipes.refmap.json 不符 → 生产(SRG)按 mixins.json 的名字
+    // 找不到 refmap → @Invoker("apply") 无法映射到 m_5787_ → InvalidAccessorException，并连累所有
+    // target RecipeManager 的 mod 一起失败。（dev 用 named 运行时、方法名本就是 apply、不查 refmap，
+    // 故此坑在 runClient 下不暴露。）显式对齐 refmap 名即修复；两版共用同名（NeoForge 生产用 Mojmap、
+    // apply 直接匹配，refmap 为 no-op、无害）。
+    mixin {
+        // Loom 1.11 要求：配置 defaultRefmapName（启用 Mixin AP）必须显式开启 legacy AP。
+        // legacy AP 生成的 refmap 同时含 named 与 SRG(m_5787_) 数据：dev(named) 运行时 Mixin 会先按
+        // apply 直接匹配成功、根本不查 refmap，故 SRG 映射不影响 dev；production(SRG) apply 直接匹配
+        // 失败后查 refmap 得 apply→m_5787_。两环境皆可用——这才是正确修复，而非删掉 mixin 块。
+        useLegacyMixinAp = true
+        defaultRefmapName = "${property("mod.id")}.refmap.json"
+    }
     // Forge dev：Architectury Loom 需显式声明 mixin config，才会在 dev launch 时把它注册到
     // Mixin 子系统（仅靠 mods.toml 的 [[mixins]] 在 Loom dev 下不会被加载）。NeoForge 侧由
     // neoforge.mods.toml 的 [[mixins]] 处理，无需此声明。
