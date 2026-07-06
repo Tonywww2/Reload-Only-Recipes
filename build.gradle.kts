@@ -19,10 +19,11 @@ val javaVersion = if (stonecutter.eval(mcVersion, ">=1.20.6")) 21 else 17
 loom {
     silentMojangMappingsLicense()
     // Mixin refmap（两版共用同一 mixin 配置；json 由 PA-2 创建）。
-    // Loom 1.14 默认关闭 mixin AP；Forge(1.20.1 SRG 运行时) 需 AP 生成 refmap
-    // 把 Mojmap 名映射为 SRG，故显式启用 legacy AP（对 NeoForge Mojmap 运行时亦无害）。
+    // 注意：Architectury Loom 的 Forge 与 NeoForge dev 运行时均为 named(Mojmap)。
+    // 不可启用 legacy mixin AP —— 它会给 Forge 生成 SRG-default 的 refmap（apply→m_5787_），
+    // 与 named dev 运行时不匹配，导致 @Invoker 目标定位失败、mixin 整体不应用（ClassCastException）。
+    // 交由 Loom 默认处理：dev 用 named 名直接匹配，production 由 remapJar 自动 reobf 到 SRG。
     mixin {
-        useLegacyMixinAp = true
         defaultRefmapName = "${property("mod.id")}.refmap.json"
     }
     if (stonecutter.current.isActive) {
@@ -71,9 +72,10 @@ tasks {
             "id" to project.property("mod.id"),
             "name" to project.property("mod.name"),
             "version" to project.property("mod.version"),
+            "pack_format" to project.property("pack_format"),
         )
         inputs.properties(props)
-        filesMatching(listOf("META-INF/mods.toml", "META-INF/neoforge.mods.toml")) { expand(props) }
+        filesMatching(listOf("META-INF/mods.toml", "META-INF/neoforge.mods.toml", "pack.mcmeta")) { expand(props) }
         // 仅保留当前加载器的元数据文件
         exclude(if (loader == ModPlatform.NEOFORGE) "META-INF/mods.toml" else "META-INF/neoforge.mods.toml")
     }

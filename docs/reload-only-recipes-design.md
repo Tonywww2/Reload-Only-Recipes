@@ -63,7 +63,7 @@ public interface RecipeManagerInvoker {
 
 ## 4. 其它 mod 配方的行为分析
 
-配方在 1.20.1 是**纯数据驱动**的，据此区分两类来源：
+配方在 1.20.1 / 1.21.1 都是**纯数据驱动**的，据此区分两类来源：
 
 ### 4.1 会被完整重载的（✅）
 
@@ -76,16 +76,17 @@ public interface RecipeManagerInvoker {
 | **A 类** | **KubeJS** | Mixin 注入 `RecipeManager.apply` | **自动触发**（mixin 就挂在 `apply` 上） |
 | **B 类** | **CraftTweaker** | `AddReloadListenerEvent` 注册独立 listener | **不触发**（不在 `apply` 链上） |
 
-- 完整 `/reload` 的监听器链（已核对 `ReloadableServerResources` patch）：
-  `listeners = 原版 listeners(含 RecipeManager) + ForgeEventFactory.onResourceReload()`（后者 post `AddReloadListenerEvent` 收集 B 类 mod 的监听器）。
+- 完整 `/reload` 的监听器链（已核对 `ReloadableServerResources` patch）：原版 listeners（含 `RecipeManager`）+ 平台事件收集的 B 类监听器——Forge 经 `ForgeEventFactory.onResourceReload()` post `AddReloadListenerEvent`，NeoForge 经等价的 `AddReloadListenerEvent`（`net.neoforged.neoforge.event.*`）。两版机制一致，B 类监听器都不在 `apply` 链上。
 - **A 类**天然兼容：我们本就要调 `apply`，KubeJS mixin 会被触发。
 - **B 类**默认不覆盖：其 listener 不在 `apply` 链上，只调 `apply` 会**抹掉**它们的运行时修改。若要兼容需另行触发（见 §9 未来扩展）。
 
 ---
 
-## 5. KubeJS 兼容方案（核心）
+## 5. KubeJS 兼容方案（核心 · 6/7 版本化）
 
-### 5.1 KubeJS 架构（已核对 1.20.1 分支 `2001` 源码）
+> KubeJS 6（分支 `2001`，Forge 1.20.1）与 KubeJS 7（分支 `2101`，NeoForge 1.21.1）**两代 API 完全不同**，兼容层必须版本化（整类隔离 + Stonecutter `//? if`）。§5.1–§5.4 为 6 代（Forge）原理与流程；§5.5 为 7 代（NeoForge）差异；§5.6 为版本化落地。两代差异一手核实见 [loader-platform-api §6](references/loader-platform-api.md)。
+
+### 5.1 KubeJS 6 架构（Forge，已核对分支 `2001` 源码）
 
 - `RecipeManagerMixin`：`@Inject(method = "apply*", at = @At("HEAD"), cancellable = true)`。逻辑：
 
@@ -149,6 +150,37 @@ CloseableResourceManager clean = new MultiPackResourceManager(
     server.getPackRepository().openAllSelected());
 // 用完注意 close()，避免文件句柄泄漏
 ```
+
+> **实现落点**：Forge 侧 `KubeJs6RecipeReloadStrategy`（`compat/kubejs/`）。真实流程 = `CleanServerResources.openClean(server)` → `ServerScriptManager.instance.wrapResourceManager(clean)` → 扫描 wrapped RM → `invokeApply` → `KubeJSReloadListener.postAfterRecipes()`，`finally { clean.close(); }`。
+
+### 5.5 KubeJS 7 差异（NeoForge，已核对分支 `2101` 源码）
+
+7 代重写了 KubeJS 的配方注入，**与 6 代机制不同**（[loader-platform-api §6.2](references/loader-platform-api.md) 一手核实）：
+
+| 维度 | KubeJS 6（Forge `2001`） | KubeJS 7（NeoForge `2101`） |
+|---|---|---|
+| `apply` mixin | `@At("HEAD") cancellable`，处理后 **`ci.cancel()`** 吃掉原版 | HEAD `post` + **TAIL `finishEvent()` 覆盖**，**不 cancel**（容错设计） |
+| 开关 | 静态字段 `RecipesEventJS.instance`（reload 后置 null） | 实例 duck `RecipeManagerKJS.kjs$getResources()`，**每次 `ReloadableServerResources` 构造时绑定、复用持久有效** |
+| 重跑脚本入口 | `ServerScriptManager.wrapResourceManager(clean)`（内部重跑 + 设 `instance`） | `((RecipeManagerKJS) rm).kjs$getResources().kjs$getServerScriptManager().reload()`（public） |
+| 干净 RM | **需要**（`wrapResourceManager` 会叠加虚拟包，须用 `PackRepository` 重建，见 §5.4） | **不需要**（虚拟包已在当前 `server.getResourceManager()`，`reload()` 只更新内容不重复插入）→ 直接用 `server.getResourceManager()` 扫描 |
+| 收尾 | `KubeJSReloadListener.postAfterRecipes()`（静态方法） | 无静态方法；`RECIPES_AFTER_LOADED` 由 `ResourceManagerReloadListener` 触发，只重载配方**可选**手动 post（多数场景无需） |
+
+**7 代兼容流程**：
+
+```mermaid
+flowchart TD
+    K7["KubeJS 7 策略（NeoForge）"] --> A1["1. ((RecipeManagerKJS) rm).kjs$getResources()<br/>.kjs$getServerScriptManager().reload()<br/>= 重读 .js + 重注册 ServerEvents.RECIPES + 更新虚拟包"]
+    A1 --> A2["2. 直接用 server.getResourceManager() 扫描 recipes → Map<br/>（无需干净 RM）"]
+    A2 --> A3["3. ((RecipeManagerInvoker) rm).invokeApply(map, rm, profiler)<br/>→ KubeJS mixin HEAD post + TAIL 覆盖 byName/byType（不 cancel）"]
+    A3 --> A4["4. （可选）ServerEvents.RECIPES_AFTER_LOADED.post(...)"]
+    A4 --> S7["5. 广播 ClientboundUpdateRecipesPacket + sendInitialRecipeBook"]
+```
+
+> **实现落点**：NeoForge 侧 `KubeJs7RecipeReloadStrategy`（`compat/kubejs/`）。真实流程 = `kjs$getResources().kjs$getServerScriptManager().reload()` → `RecipeScanner.scan(server.getResourceManager())` → `invokeApply`（无干净 RM、无 `postAfterRecipes`）。
+
+### 5.6 版本化落地（Stonecutter）
+
+两代兼容代码放独立平级实现类（`KubeJs6RecipeReloadStrategy` / `KubeJs7RecipeReloadStrategy`），各自的 KubeJS 类引用用 `//? if forge {` / `//?} else {` 隔离，未激活节点整段注释、不参与编译。选择由 `RecipeReloadService.pick()` 在运行时按 `ModList.isLoaded("kubejs")` + 平台决定（Forge→6 代、NeoForge→7 代、否则 Vanilla），并**类隔离**加载（无 KubeJS 时永不链接，避免 `NoClassDefFoundError`）。详见 [loader-platform-api §6.3/§7](references/loader-platform-api.md)。
 
 ---
 
@@ -337,7 +369,7 @@ final class RecipeSync {
 ## 8. 风险与边界
 
 1. **资源管理器重复包装（最需注意）**：务必用 `PackRepository.openAllSelected()` 重建干净 manager 传给 `wrapResourceManager`，并在 `finally` 中 `close()`。
-2. **强耦合 KubeJS 内部实现**：`wrapResourceManager` / `RecipesEventJS.instance` / `postAfterRecipes` 属内部实现，非稳定 API，**KubeJS 大版本更新可能失效**。建议按 `kubejs` 版本做适配层；`ModList` 判断失败或 API 缺失时回落 Vanilla 策略并告警。
+2. **强耦合 KubeJS 内部实现**：6 代 `wrapResourceManager` / `RecipesEventJS.instance` / `postAfterRecipes`、7 代 `kjs$getResources().kjs$getServerScriptManager().reload()` 均属内部实现，非稳定 API，**KubeJS 大版本更新可能失效**。已按 `kubejs` 版本做适配层（6 代 `KubeJs6RecipeReloadStrategy` / 7 代 `KubeJs7RecipeReloadStrategy`）；兼容策略抛异常时由 `RecipeReloadService` 回落 Vanilla 策略并告警。
 3. **B 类 mod（CraftTweaker 等）不被覆盖**：其 `AddReloadListenerEvent` listener 不在 `apply` 链上，本方案不触发。纯改 JSON 配方场景不受影响；若依赖其脚本改配方，需用它自带的重载。
 4. **只重载配方，不重载 tags / loot / advancement**：若配方依赖的 `tag` 也改了，需连标签一起重载。
 5. **性能**：KubeJS 策略会重跑脚本 + 重建 `MultiPackResourceManager`，比纯 Vanilla 重，但仍远小于完整 `/reload`（不碰 loot/advancement/function/tags 及其它 listener）。
@@ -353,21 +385,22 @@ final class RecipeSync {
 
 ---
 
-## 10. 关键 API / SRG 参考（1.20.1，已核对 Forge patch）
+## 10. 关键 API 参考（Forge 1.20.1 SRG / NeoForge 1.21.1 Mojmap）
 
-| 成员 | 官方名 | SRG |
+**SRG 仅 Forge 1.20.1 运行时需要**；NeoForge 1.21.1 运行时是 Mojmap（名即官方名，无 SRG）。Mixin `@Invoker` 两版共用同一接口，Loom refmap 各自映射（详见 [loader-platform-api §2](references/loader-platform-api.md)）。
+
+| 成员 | 官方名（两版通用） | Forge 1.20.1 SRG |
 |---|---|---|
 | `RecipeManager#apply` | `apply` | `m_5787_` |
 | `RecipeManager#getRecipes` | `getRecipes` | `m_44051_` |
 | `MinecraftServer#getRecipeManager` | `getRecipeManager` | `m_129894_` |
 | `PlayerList#broadcastAll` | `broadcastAll` | `m_11268_` |
 
-其它公开 API：`MinecraftServer#getResourceManager`、`MinecraftServer#getPackRepository`、`PackRepository#openAllSelected`、`FileToIdConverter#json/listMatchingResources/fileToId`、`ClientboundUpdateRecipesPacket(Collection)`、`ServerRecipeBook#sendInitialRecipeBook`、`InactiveProfiler#INSTANCE`。
+其它公开 API（两版通用）：`MinecraftServer#getResourceManager`、`MinecraftServer#getPackRepository`、`PackRepository#openAllSelected`、`FileToIdConverter#json/listMatchingResources/fileToId`、`ClientboundUpdateRecipesPacket(Collection)`、`ServerRecipeBook#sendInitialRecipeBook`、`InactiveProfiler#INSTANCE`。配方对象两版不同（Forge `Recipe<?>` / NeoForge `RecipeHolder<?>`），但我们只把 JSON map 交给 `apply`、不直接触碰。
 
-KubeJS（`modCompileOnly`，1.20.1 分支 `2001`）：
-`dev.latvian.mods.kubejs.server.ServerScriptManager#instance / #wrapResourceManager(CloseableResourceManager)`、
-`dev.latvian.mods.kubejs.server.KubeJSReloadListener#postAfterRecipes()`、
-`dev.latvian.mods.kubejs.recipe.RecipesEventJS#instance`。
+KubeJS（`modCompileOnly`）：
+- **6 代（Forge，分支 `2001`）**：`dev.latvian.mods.kubejs.server.ServerScriptManager#instance / #wrapResourceManager(CloseableResourceManager)`、`dev.latvian.mods.kubejs.server.KubeJSReloadListener#postAfterRecipes()`、`dev.latvian.mods.kubejs.recipe.RecipesEventJS#instance`。
+- **7 代（NeoForge，分支 `2101`）**：`dev.latvian.mods.kubejs.core.RecipeManagerKJS#kjs$getResources()`、`ReloadableServerResourcesKJS#kjs$getServerScriptManager()`、`dev.latvian.mods.kubejs.server.ServerScriptManager#reload()`。
 
 ---
 
