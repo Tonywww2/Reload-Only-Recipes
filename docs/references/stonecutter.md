@@ -1,7 +1,7 @@
-# 参考：Stonecutter 多版本/多加载器（ReloadOnlyRecipes 版）
+# 参考：Stonecutter 多版本/多加载器（reloadonlydata 版）
 
 > 来源：Stonecutter 官方文档 https://stonecutter.kikugie.dev/wiki/ 与官方/社区模板（已核实）。
-> 适用：**ReloadOnlyRecipes** 同时维护 **Forge 1.20.1**（Java 17）与 **NeoForge 1.21.1**（Java 21）。
+> 适用：**reloadonlydata** 同时维护 **Forge 1.20.1**（Java 17）与 **NeoForge 1.21.1**（Java 21）。
 > 本项目为**纯 Java 工具 mod**：核心只有「一条 `/reloadrecipes` 命令 + Mixin 访问 `RecipeManager.apply` + KubeJS 软兼容」，无方块/GUI。
 > 构建脚本（Architectury Loom flat + Mixin + KubeJS 软依赖）见 [multiloader-build.md](multiloader-build.md)；两版平台 API 差异见 [loader-platform-api.md](loader-platform-api.md)。
 
@@ -45,7 +45,7 @@
 ## 3. settings.gradle.kts
 
 ```kotlin
-rootProject.name = "ReloadOnlyRecipes"
+rootProject.name = "reloadonlydata"
 
 pluginManagement {
     repositories {
@@ -201,4 +201,4 @@ settings 与控制器见 §3/§4；构建脚本见 [multiloader-build.md](multil
 ---
 
 ## 修订记录
-- 依据 Stonecutter 官方 wiki 与官方多加载器模板，改写为 ReloadOnlyRecipes（纯 Java、Forge 1.20.1 + NeoForge 1.21.1、Loom flat）版；隔离点清单对齐本项目的命令/RecipeManager/KubeJS 场景。
+- 依据 Stonecutter 官方 wiki 与官方多加载器模板，改写为 reloadonlydata（纯 Java、Forge 1.20.1 + NeoForge 1.21.1、Loom flat）版；隔离点清单对齐本项目的命令/RecipeManager/KubeJS 场景。

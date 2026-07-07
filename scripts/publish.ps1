@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Build every loader and PUBLISH the ROR release to CurseForge (asks to confirm first).
+    Build every loader and PUBLISH the ROD release to CurseForge (asks to confirm first).
 
 .DESCRIPTION
     Reads the version from gradle.properties, shows exactly what will be uploaded, and only after
@@ -84,7 +84,7 @@ if (-not $Yes) {
     }
 }
 
-Write-Host "== Publishing ROR $version to CurseForge ==" -ForegroundColor Cyan
+Write-Host "== Publishing ROD $version to CurseForge ==" -ForegroundColor Cyan
 
 # Pass args as an array so PowerShell hands each flag to Gradle as a single token.
 & .\gradlew.bat @('publishAllVersions', '--console=plain')

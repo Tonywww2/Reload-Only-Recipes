@@ -3,7 +3,7 @@ loaderVersion = "[4,)"
 license = "All Rights Reserved"
 
 [[mixins]]
-config = "reloadonlyrecipes.mixins.json"
+config = "reloadonlydata.mixins.json"
 
 [[mods]]
 modId = "${id}"

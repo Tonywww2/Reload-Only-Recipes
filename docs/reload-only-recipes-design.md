@@ -1,4 +1,4 @@
-# ReloadOnlyRecipes 设计文档
+# reloadonlydata 设计文档
 
 > 目标平台：**Minecraft 1.20.1 / Forge**
 > 一句话目标：提供一条指令 `/reloadrecipes`，**只重载配方（recipes）**，避免完整 `/reload` 在复杂整合包环境下的巨大开销；并**兼容 KubeJS** 的运行时配方修改。
@@ -50,14 +50,14 @@
 @Mixin(RecipeManager.class)
 public interface RecipeManagerInvoker {
     @Invoker("apply")
-    void reloadonlyrecipes$invokeApply(
+    void reloadonlydata$invokeApply(
         Map<ResourceLocation, JsonElement> map,
         ResourceManager resourceManager,
         ProfilerFiller profiler);
 }
 ```
 
-调用：`((RecipeManagerInvoker) recipeManager).reloadonlyrecipes$invokeApply(map, rm, InactiveProfiler.INSTANCE);`
+调用：`((RecipeManagerInvoker) recipeManager).reloadonlydata$invokeApply(map, rm, InactiveProfiler.INSTANCE);`
 
 ---
 
@@ -211,7 +211,7 @@ dependencies {
 用于**条件启用**任何 mixin（尤其未来若需 mixin 其它 mod 的类）。判断在 mixin 极早期阶段，**用 `LoadingModList`（此阶段 `ModList` 尚不可用）**：
 
 ```java
-public class ReloadOnlyRecipesMixinPlugin implements IMixinConfigPlugin {
+public class reloadonlydataMixinPlugin implements IMixinConfigPlugin {
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
         // 约定：kubejs 兼容用的 mixin 放在 *.mixin.compat.kubejs.* 包下
@@ -292,7 +292,7 @@ final class VanillaRecipeReloadStrategy implements RecipeReloadStrategy {
 
         Map<ResourceLocation, JsonElement> map = scan(resources);
         ((RecipeManagerInvoker) rm)
-            .reloadonlyrecipes$invokeApply(map, resources, InactiveProfiler.INSTANCE);
+            .reloadonlydata$invokeApply(map, resources, InactiveProfiler.INSTANCE);
         RecipeSync.toAllClients(server, rm);
     }
 
@@ -331,7 +331,7 @@ final class KubeJSRecipeReloadStrategy implements RecipeReloadStrategy {
 
             // 3) invokeApply → KubeJS RecipeManagerMixin 在 HEAD 接管
             ((RecipeManagerInvoker) rm)
-                .reloadonlyrecipes$invokeApply(map, wrapped, InactiveProfiler.INSTANCE);
+                .reloadonlydata$invokeApply(map, wrapped, InactiveProfiler.INSTANCE);
 
             // 4) KubeJS 收尾事件
             KubeJSReloadListener.postAfterRecipes();
@@ -361,7 +361,7 @@ final class RecipeSync {
 
 ### 7.6 Mixin 资源
 
-- `mixins.reloadonlyrecipes.json`：注册 `RecipeManagerInvoker`，`plugin` 指向 `ReloadOnlyRecipesMixinPlugin`。
+- `mixins.reloadonlydata.json`：注册 `RecipeManagerInvoker`，`plugin` 指向 `reloadonlydataMixinPlugin`。
 - `RecipeManagerInvoker` 为无条件 mixin（MC 类一定存在）。
 
 ---
@@ -407,7 +407,7 @@ KubeJS（`modCompileOnly`）：
 ## 11. 待办 / 下一步
 
 - [ ] 搭建 Forge 1.20.1 MDK（`build.gradle`、`gradle.properties`、`settings.gradle`、`mods.toml`、主类）。
-- [ ] 加入 Mixin 配置（`RecipeManagerInvoker` + `ReloadOnlyRecipesMixinPlugin`）。
+- [ ] 加入 Mixin 配置（`RecipeManagerInvoker` + `reloadonlydataMixinPlugin`）。
 - [ ] 实现 `RecipeReloadStrategy` / `VanillaRecipeReloadStrategy` / `KubeJSRecipeReloadStrategy` / `RecipeSync`。
 - [ ] 注册 `/reloadrecipes` 命令。
 - [ ] `modCompileOnly` 接入 KubeJS，验证 KubeJS 策略端到端。

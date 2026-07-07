@@ -1,4 +1,4 @@
-rootProject.name = "ReloadOnlyRecipes"
+rootProject.name = "reloadonlydata"
 
 pluginManagement {
     repositories {

@@ -1,6 +1,18 @@
 {
-  "commands.reloadonlyrecipes.reload.start": "Reloading recipes...",
-  "commands.reloadonlyrecipes.reload.success": "Reloaded %1$s recipes in %2$s ms",
-  "commands.reloadonlyrecipes.reload.failed": "Failed to reload recipes: %s",
-  "commands.reloadonlyrecipes.reload.fallback": "KubeJS reload failed, fell back to vanilla; reloaded %1$s recipes in %2$s ms"
+  "commands.reloadonlydata.reload.start": "Reloading...",
+  "commands.reloadonlydata.reload.success": "Reloaded %1$s recipes in %2$s ms",
+  "commands.reloadonlydata.reload.failed": "Failed to reload: %s",
+  "commands.reloadonlydata.reload.fallback": "KubeJS reload failed, fell back to vanilla; reloaded %1$s recipes in %2$s ms",
+  "commands.reloadonlydata.reload.unsupported": "Unknown or non-hot-reloadable target: %s",
+  "commands.reloadonlydata.reload.recipes.success": "Reloaded %1$s recipes in %2$s ms",
+  "commands.reloadonlydata.reload.advancements.success": "Reloaded %1$s advancements in %2$s ms",
+  "commands.reloadonlydata.reload.tags.success": "Reloaded %1$s tags in %2$s ms",
+  "commands.reloadonlydata.reload.tags.ingredient_hint": "Note: tags updated, but tag-based ingredients in already-loaded recipes are still cached and won't refresh. Run /reloadrecipes next to apply.",
+  "commands.reloadonlydata.reload.tags.unknown_registry": "Unknown registry: %s (use tab-completion to see valid registries)",
+  "commands.reloadonlydata.reload.loot.success": "Reloaded %1$s loot entries in %2$s ms",
+  "commands.reloadonlydata.reload.functions.success": "Reloaded %1$s functions in %2$s ms",
+  "commands.reloadonlydata.reload.functions.tag_hint": "Note: functions reloaded, but #function tags are not refreshed. Reload them separately if you changed function tags.",
+  "commands.reloadonlydata.reload.registry.warn": "Warning: reloading registry '%s' takes effect on the server immediately, but online clients must reconnect to see the change (client registries only sync on join). Worldgen/generation-baked registries (biomes/structures/etc.) are blacklisted and cannot be reloaded (would corrupt the save). To proceed, run the command again ending with 'confirm'.",
+  "commands.reloadonlydata.reload.registry.success": "Reloaded registry: %1$s entries in %2$s ms",
+  "commands.reloadonlydata.reload.registry.client_hint": "Registry '%s' was reloaded on the server. Reconnect to apply it on the client (client registries only sync when joining)."
 }

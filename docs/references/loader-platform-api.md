@@ -1,10 +1,10 @@
-# 参考：平台 API 差异（Forge 1.20.1 ↔ NeoForge 1.21.1，ReloadOnlyRecipes 版）
+# 参考：平台 API 差异（Forge 1.20.1 ↔ NeoForge 1.21.1，reloadonlydata 版）
 
-> 用途：指导 ReloadOnlyRecipes 在两个加载器/版本上的 Stonecutter 条件实现。
+> 用途：指导 reloadonlydata 在两个加载器/版本上的 Stonecutter 条件实现。
 > 核实来源：Forge 1.20.1 官方 patch（`RecipeManager`/`PlayerList`，第一手核实）、KubeJS `2001`（6 代/Forge）与 `2101`（7 代/NeoForge）真实源码。标「待落地验证」处以编译器/反编译源码为准。
 > Stonecutter 注释语法见 [stonecutter.md](stonecutter.md)；构建见 [multiloader-build.md](multiloader-build.md)。
 
-> ⚠️ 本项目**不需要**方块/方块实体/物品注册、客户端渲染、方块实体同步、自定义网络包、datagen。以下只覆盖 ReloadOnlyRecipes 真正用到的平台边界。
+> ⚠️ 本项目**不需要**方块/方块实体/物品注册、客户端渲染、方块实体同步、自定义网络包、datagen。以下只覆盖 reloadonlydata 真正用到的平台边界。
 
 目录：
 1. Mod 入口与命令注册
@@ -13,7 +13,7 @@
 4. 条件配方（两版都在 `apply` 内自动处理）
 5. 干净资源管理器（`PackRepository.openAllSelected`）
 6. KubeJS 兼容差异（6 vs 7，已核实）
-7. 映射到 ReloadOnlyRecipes / 隔离清单
+7. 映射到 reloadonlydata / 隔离清单
 
 ---
 
@@ -65,14 +65,14 @@ public void onRegisterCommands(RegisterCommandsEvent event) {
 @Mixin(RecipeManager.class)
 public interface RecipeManagerInvoker {
     @Invoker("apply")
-    void reloadonlyrecipes$invokeApply(
+    void reloadonlydata$invokeApply(
         Map<ResourceLocation, JsonElement> map,
         ResourceManager resourceManager,
         ProfilerFiller profiler);
 }
 ```
 
-- 调用：`((RecipeManagerInvoker) recipeManager).reloadonlyrecipes$invokeApply(map, rm, InactiveProfiler.INSTANCE);`
+- 调用：`((RecipeManagerInvoker) recipeManager).reloadonlydata$invokeApply(map, rm, InactiveProfiler.INSTANCE);`
 - 扫描 `recipes` 目录得到 `Map<ResourceLocation, JsonElement>` 的代码（`FileToIdConverter.json("recipes")` + `GsonHelper.fromJson`）**两版一致**。
 - 我们**不直接触碰** `Recipe<?>` / `RecipeHolder<?>`（只传 JSON map 给 `apply`，让平台自己重建），故 §2 的类型差异**基本不进入我们的代码**——除非要遍历/统计配方数（`recipeManager.getRecipes().size()` 两版都可，无需隔离）。
 
@@ -119,7 +119,7 @@ for (ServerPlayer p : server.getPlayerList().getPlayers()) {
 | 机制 | `CraftingHelper.processConditions`（Forge patch 进 `apply`，条件 `forge:...`）| 原生 `ICondition` + Codec（`neoforge:conditions`，进 `apply` 的 Codec 解码）|
 | 我们要做的 | **无** | **无** |
 
-> 关键：两版我们都**调实例的 `apply`**，条件配方由各自平台在 `apply` 内部处理。ReloadOnlyRecipes **无需感知**条件系统差异——这也是「必须调实例 apply、不能自己手写 JSON 解析」的核心原因。
+> 关键：两版我们都**调实例的 `apply`**，条件配方由各自平台在 `apply` 内部处理。reloadonlydata **无需感知**条件系统差异——这也是「必须调实例 apply、不能自己手写 JSON 解析」的核心原因。
 
 ---
 
@@ -175,12 +175,12 @@ CloseableResourceManager clean = new MultiPackResourceManager(
 //? if forge {
 /*// KubeJS 6：wrapResourceManager 重跑脚本+设 instance -> invokeApply(mixin cancel) -> postAfterRecipes()
 ServerScriptManager.instance.wrapResourceManager(clean);
-((RecipeManagerInvoker) rm).reloadonlyrecipes$invokeApply(wrapped, wrapped, InactiveProfiler.INSTANCE);
+((RecipeManagerInvoker) rm).reloadonlydata$invokeApply(wrapped, wrapped, InactiveProfiler.INSTANCE);
 KubeJSReloadListener.postAfterRecipes();
 *///?} else {
 // KubeJS 7（R2 已核实）：var sm = ((RecipeManagerKJS) rm).kjs$getResources().kjs$getServerScriptManager(); sm.reload();
 // 直接用 server.getResourceManager()（已含虚拟包，无需干净 RM）扫描 -> invokeApply（HEAD/TAIL 自动介入）
-// ((RecipeManagerInvoker) rm).reloadonlyrecipes$invokeApply(map, server.getResourceManager(), InactiveProfiler.INSTANCE);
+// ((RecipeManagerInvoker) rm).reloadonlydata$invokeApply(map, server.getResourceManager(), InactiveProfiler.INSTANCE);
 //?}
 ```
 
@@ -188,7 +188,7 @@ KubeJSReloadListener.postAfterRecipes();
 
 ---
 
-## 7. 映射到 ReloadOnlyRecipes / 隔离清单
+## 7. 映射到 reloadonlydata / 隔离清单
 
 | 平台边界 | 两版是否需隔离 | 依据 |
 | --- | --- | --- |
@@ -208,5 +208,5 @@ KubeJSReloadListener.postAfterRecipes();
 ---
 
 ## 修订记录
-- 全文替换为 ReloadOnlyRecipes 平台边界：命令注册、`RecipeManager`/`RecipeHolder`、`ClientboundUpdateRecipesPacket`、条件配方、`PackRepository`、KubeJS 6 vs 7 兼容差异；移除原 Blackboard 的方块/方块实体/`SyncedBlockEntity`/网络通道内容。KubeJS 差异依据 `2001`/`2101` 真实源码核实；KubeJS 7 脚本重载入口与 AFTER_LOADED 触发标为待落地验证。
+- 全文替换为 reloadonlydata 平台边界：命令注册、`RecipeManager`/`RecipeHolder`、`ClientboundUpdateRecipesPacket`、条件配方、`PackRepository`、KubeJS 6 vs 7 兼容差异；移除原 Blackboard 的方块/方块实体/`SyncedBlockEntity`/网络通道内容。KubeJS 差异依据 `2001`/`2101` 真实源码核实；KubeJS 7 脚本重载入口与 AFTER_LOADED 触发标为待落地验证。
 - （PA-3/Agent3）R2 已核实并落地 §6.2/§6.3：7 代脚本重载入口＝`ServerScriptManager.reload()`（经 `RecipeManagerKJS.kjs$getResources().kjs$getServerScriptManager()`）；`kjs$resources` 每次 `ReloadableServerResources` 构造时绑定、复用持久有效；**7 代无需重建干净 RM**（虚拟包已在当前 RM）；`RECIPES_AFTER_LOADED` 可选手动 post。

@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Dry-run the ROR CurseForge release pipeline. Builds every loader, uploads NOTHING.
+    Dry-run the ROD CurseForge release pipeline. Builds every loader, uploads NOTHING.
 
 .DESCRIPTION
     Runs `gradlew publishAllVersions -Ppublish.dryRun=true`, which exercises the whole publish
@@ -38,7 +38,7 @@ if ($JavaHome) {
 $versionLine = Get-Content 'gradle.properties' | Where-Object { $_ -match '^\s*mod\.version\s*=' } | Select-Object -First 1
 $version = ($versionLine -replace '^\s*mod\.version\s*=\s*', '').Trim()
 
-Write-Host "== ROR DRY RUN (no upload) - version $version ==" -ForegroundColor Cyan
+Write-Host "== ROD DRY RUN (no upload) - version $version ==" -ForegroundColor Cyan
 
 # Pass args as an array so PowerShell hands `-Ppublish.dryRun=true` to Gradle as a single token.
 & .\gradlew.bat @('publishAllVersions', '-Ppublish.dryRun=true', '--console=plain')

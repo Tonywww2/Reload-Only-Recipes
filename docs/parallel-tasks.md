@@ -1,4 +1,4 @@
-# ReloadOnlyRecipes 平行任务表（多 Agent 并行）
+# reloadonlydata 平行任务表（多 Agent 并行）
 
 > 依据：[reload-only-recipes-design.md](reload-only-recipes-design.md)（总设计）+ [task-plan.md](task-plan.md)（总任务表）。
 > 目的：把全部工作拆成**阶段 × 平行任务**，供多个 agent 同时施工。
@@ -33,13 +33,13 @@
 
 ## 2. 共享约定（冻结 — 任何人不得擅改）
 
-- **modId** = `reloadonlyrecipes`
-- **根包** = `com.tonywww.reloadonlyrecipes`（如需改 group，走 CR，全局统一）
-- **mixin 配置文件** = `reloadonlyrecipes.mixins.json`；**refmap** = `reloadonlyrecipes.refmap.json`
-- **翻译 key 前缀** = `reloadonlyrecipes.` / 命令反馈 `commands.reloadonlyrecipes.*`
+- **modId** = `reloadonlydata`
+- **根包** = `com.tonywww.reloadonlydata`（如需改 group，走 CR，全局统一）
+- **mixin 配置文件** = `reloadonlydata.mixins.json`；**refmap** = `reloadonlydata.refmap.json`
+- **翻译 key 前缀** = `reloadonlydata.` / 命令反馈 `commands.reloadonlydata.*`
 - **冻结接口签名**（阶段 A 产出，B/C/D 只读依赖）：
   - `RecipeReloadStrategy.reload(MinecraftServer server)` — **仅重建配方表，不做同步**。
-  - `mixin.RecipeManagerInvoker#reloadonlyrecipes$invokeApply(Map<ResourceLocation, JsonElement>, ResourceManager, ProfilerFiller)`
+  - `mixin.RecipeManagerInvoker#reloadonlydata$invokeApply(Map<ResourceLocation, JsonElement>, ResourceManager, ProfilerFiller)`
   - `reload.RecipeReloadService.reload(MinecraftServer server)` — 门面：pick 策略 → 执行 → 同步（骨架在 A，装配在 D）。
   - `reload.RecipeSync.toAllClients(MinecraftServer server, RecipeManager rm)`
   - `reload.CleanServerResources.openClean(MinecraftServer server) : CloseableResourceManager`
@@ -81,10 +81,10 @@ flowchart LR
 - Owns：`gradle/**`、`gradlew*`、`settings.gradle.kts`、`stonecutter.gradle.kts`、`build.gradle.kts`、`gradle.properties`、`versions/1.20.1-forge/gradle.properties`、`versions/1.21.1-neoforge/gradle.properties`、`src/main/resources/META-INF/mods.toml`、`src/main/resources/META-INF/neoforge.mods.toml`
 - Reads：references/[multiloader-build.md](references/multiloader-build.md)、[stonecutter.md](references/stonecutter.md)
 - 含 **R1**：查 Maven 填最新版本（NeoForge 21.1.x、Architectury Loom、KubeJS 6/7）。
-- 交付/验收：两版 `gradlew :<node>:build` 至少配置阶段通过；两个 `.toml` 含 `[[mixins]] config="reloadonlyrecipes.mixins.json"`（json 由 PA-2 建）与 KubeJS 软依赖声明；`modLoader=javafml`。
+- 交付/验收：两版 `gradlew :<node>:build` 至少配置阶段通过；两个 `.toml` 含 `[[mixins]] config="reloadonlydata.mixins.json"`（json 由 PA-2 建）与 KubeJS 软依赖声明；`modLoader=javafml`。
 - 映射：task-plan `T0.1–T0.8`、`T0.10`、`T1.4`。
 - ✅ **产出（Agent2）**：脚手架文件全部交付并通过配置验证——
-  - **文件**：`settings.gradle.kts`（两节点 + Stonecutter 0.9.6，`kotlinController`）、`stonecutter.gradle.kts`（`active` + `constants.match(loader,"forge","neoforge")`）、`build.gradle.kts`（`loom.platform` 分支、Java 17/21 映射、`officialMojangMappings`、`processResources.expand`、mixin AP）、`gradle.properties`、`versions/1.20.1-forge/gradle.properties`、`versions/1.21.1-neoforge/gradle.properties`、`META-INF/mods.toml` + `META-INF/neoforge.mods.toml`（均含 `[[mixins]] config="reloadonlyrecipes.mixins.json"` + KubeJS 软依赖、`modLoader=javafml`）、Gradle wrapper 9.0.0（`gradlew*` + `gradle-wrapper.jar`）、`gradle/gradle-daemon-jvm.properties`。
+  - **文件**：`settings.gradle.kts`（两节点 + Stonecutter 0.9.6，`kotlinController`）、`stonecutter.gradle.kts`（`active` + `constants.match(loader,"forge","neoforge")`）、`build.gradle.kts`（`loom.platform` 分支、Java 17/21 映射、`officialMojangMappings`、`processResources.expand`、mixin AP）、`gradle.properties`、`versions/1.20.1-forge/gradle.properties`、`versions/1.21.1-neoforge/gradle.properties`、`META-INF/mods.toml` + `META-INF/neoforge.mods.toml`（均含 `[[mixins]] config="reloadonlydata.mixins.json"` + KubeJS 软依赖、`modLoader=javafml`）、Gradle wrapper 9.0.0（`gradlew*` + `gradle-wrapper.jar`）、`gradle/gradle-daemon-jvm.properties`。
   - **R1 版本号落地**：Gradle `9.0.0`、Stonecutter `0.9.6`、Architectury Loom `1.14.473`、Forge `47.4.4`（1.20.1）、NeoForge `21.1.193`（1.21.1）、KubeJS `2001.6.5-build.26`（forge6）/`2101.7.2-build.369`（neoforge7）。
   - **验收**：`gradlew :1.20.1-forge:tasks` 与 `:1.21.1-neoforge:tasks` 均 `BUILD SUCCESSFUL`（配置阶段通过）；`:1.21.1-neoforge:processResources` 执行成功（toml `expand` 正常）；Loom 完整解析并反编译 MC/Forge/NeoForge。
   - ⚠️ **构建约束（供 Gate A 与所有 agent）**：Stonecutter 0.9.6 要求 **Gradle daemon 运行在 Java 21+**。已放 `gradle/gradle-daemon-jvm.properties`（`toolchainVersion=21`），但 Gradle 不会自动下载 JDK——需系统 `JAVA_HOME=<Java21>` 或 IDE Gradle JVM=21，否则报「Dependency requires at least JVM runtime version 21」。已验证可用 JDK：`C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot`。
@@ -92,11 +92,11 @@ flowchart LR
   - 勾选 task-plan `T0.1`–`T0.8`、`T0.10`、`T1.4`（两 toml 的 `[[mixins]]` 声明）。**无设计变更**；M0 的 `runClient`（T0.11）留待 Gate A。
 
 **PA-2 · 契约冻结：主类 + Mixin 骨架 + 接口 + 门面**  ☑ 负责:Agent1
-- Owns：`.../ReloadOnlyRecipes.java`（主类，`//? if` 隔离总线 import）、`.../ModConstants.java`、`.../mixin/RecipeManagerInvoker.java`、`.../mixin/ReloadOnlyRecipesMixinPlugin.java`、`src/main/resources/reloadonlyrecipes.mixins.json`、`.../reload/RecipeReloadStrategy.java`（接口）、`.../reload/RecipeReloadService.java`（门面**骨架**，`reload()` 先抛 `UnsupportedOperationException`）
+- Owns：`.../reloadonlydata.java`（主类，`//? if` 隔离总线 import）、`.../ModConstants.java`、`.../mixin/RecipeManagerInvoker.java`、`.../mixin/reloadonlydataMixinPlugin.java`、`src/main/resources/reloadonlydata.mixins.json`、`.../reload/RecipeReloadStrategy.java`（接口）、`.../reload/RecipeReloadService.java`（门面**骨架**，`reload()` 先抛 `UnsupportedOperationException`）
 - Reads：design §3/§6、references/[loader-platform-api.md](references/loader-platform-api.md) §1/§2
 - 交付/验收：**冻结 §2 所有接口签名**；两版编译通过；`runClient` 加载 mixin 无错。
 - 映射：task-plan `T0.9`、`T1.1–T1.4`、`T2.1`（接口部分）。
-- ✅ **产出（Agent1）**：`ModConstants` / `ReloadOnlyRecipes`（主类，`//? if` 隔离 `@Mod` import）/ `mixin.RecipeManagerInvoker` / `mixin.ReloadOnlyRecipesMixinPlugin`（`LoadingModList` `//? if` 隔离）/ `reloadonlyrecipes.mixins.json` / `reload.RecipeReloadStrategy`（接口）/ `reload.RecipeReloadService`（门面骨架，抛 `UnsupportedOperationException`）。**§2 接口签名已冻结**。task-plan 勾选 T0.9/T1.1/T1.2/T1.3（T1.4「toml 声明」属 PA-1；T2.1 接口就绪、`pick()` 待 PD-1）。**无设计变更**。编译验证待 PA-1 build 就绪后于 Gate A 进行。
+- ✅ **产出（Agent1）**：`ModConstants` / `reloadonlydata`（主类，`//? if` 隔离 `@Mod` import）/ `mixin.RecipeManagerInvoker` / `mixin.reloadonlydataMixinPlugin`（`LoadingModList` `//? if` 隔离）/ `reloadonlydata.mixins.json` / `reload.RecipeReloadStrategy`（接口）/ `reload.RecipeReloadService`（门面骨架，抛 `UnsupportedOperationException`）。**§2 接口签名已冻结**。task-plan 勾选 T0.9/T1.1/T1.2/T1.3（T1.4「toml 声明」属 PA-1；T2.1 接口就绪、`pick()` 待 PD-1）。**无设计变更**。编译验证待 PA-1 build 就绪后于 Gate A 进行。
 
 **PA-3 · 研究：KubeJS 7 脚本重载入口（R2）**  ☑ 负责:Agent3
 - Owns：无代码；结论写入本表 §5「研究结论 R2」+ 更新 references/[loader-platform-api.md](references/loader-platform-api.md) §6 的待验证标注。
@@ -138,14 +138,14 @@ flowchart LR
 - Reads：`RecipeReloadService`（PA-2 门面骨架）、`RegisterCommandsEvent`（`//? if` 隔离 import）
 - 交付/验收：`/reloadrecipes` 注册（权限 2、成功/失败反馈用 §2 翻译 key），命令体调 `RecipeReloadService.reload(server)`；命令可出现（门面此时抛占位异常亦算注册成功）。
 - 映射：task-plan `T2.4`、`T2.1`（命令侧）。
-- ✅ **产出（Agent1）**：`command.ModCommands`（独立 `@EventBusSubscriber`，不改主类；`//? if` 隔离 `@EventBusSubscriber`/`SubscribeEvent`/`RegisterCommandsEvent` 三处包名）；`/reloadrecipes` 权限 2，命令体调 `RecipeReloadService.reload(server)`，成功/失败走翻译 key。**已实测两版 `compileJava` BUILD SUCCESSFUL**（neoforge 1 executed；forge `--rerun-tasks` 3 executed）。**给 PB-5 的翻译 key 约定**：`commands.reloadonlyrecipes.reload.success`（%1$s=条数，%2$s=耗时 ms）、`commands.reloadonlyrecipes.reload.failure`（%1$s=错误）。**无设计变更**。
+- ✅ **产出（Agent1）**：`command.ModCommands`（独立 `@EventBusSubscriber`，不改主类；`//? if` 隔离 `@EventBusSubscriber`/`SubscribeEvent`/`RegisterCommandsEvent` 三处包名）；`/reloadrecipes` 权限 2，命令体调 `RecipeReloadService.reload(server)`，成功/失败走翻译 key。**已实测两版 `compileJava` BUILD SUCCESSFUL**（neoforge 1 executed；forge `--rerun-tasks` 3 executed）。**给 PB-5 的翻译 key 约定**：`commands.reloadonlydata.reload.success`（%1$s=条数，%2$s=耗时 ms）、`commands.reloadonlydata.reload.failure`（%1$s=错误）。**无设计变更**。
 
 **PB-5 · i18n 与文案**  ☑ 负责:Agent
-- Owns：`src/main/resources/assets/reloadonlyrecipes/lang/en_us.json`、`zh_cn.json`
+- Owns：`src/main/resources/assets/reloadonlydata/lang/en_us.json`、`zh_cn.json`
 - Reads：§2 翻译 key 前缀约定（与 PB-4 一致）
 - 交付/验收：成功/失败/条数/耗时文案齐全，key 与 PB-4 对齐。
 - 映射：task-plan `T4.3`。
-- ✅ **产出（PB-5）**：`assets/reloadonlyrecipes/lang/en_us.json` + `zh_cn.json`（JSON 校验无误）。**命令反馈 key 契约（PB-4 / PE-1 须使用这些 key）**：`commands.reloadonlyrecipes.reload.start`（无参）/ `.success`（`%1$s`=条数、`%2$s`=耗时ms）/ `.failed`（`%s`=错误）/ `.fallback`（`%1$s`=条数、`%2$s`=耗时；KubeJS 兼容失败回落 Vanilla 时用）。命令体用 `Component.translatable(key, args...)`。**无设计变更**。
+- ✅ **产出（PB-5）**：`assets/reloadonlydata/lang/en_us.json` + `zh_cn.json`（JSON 校验无误）。**命令反馈 key 契约（PB-4 / PE-1 须使用这些 key）**：`commands.reloadonlydata.reload.start`（无参）/ `.success`（`%1$s`=条数、`%2$s`=耗时ms）/ `.failed`（`%s`=错误）/ `.fallback`（`%1$s`=条数、`%2$s`=耗时；KubeJS 兼容失败回落 Vanilla 时用）。命令体用 `Component.translatable(key, args...)`。**无设计变更**。
 
 > **Gate B**：五任务 ☑ 后，两版 `build` 绿（组件均编译）。解锁阶段 C 与 D。
 
@@ -176,7 +176,7 @@ flowchart LR
 ### 阶段 D · 集成与装配（前置：阶段 B + C）— 串行
 
 **PD-1 · 门面装配 + 策略选择**  ☑ 负责:Agent1
-- Owns：`.../reload/RecipeReloadService.java`（填真正逻辑，替换占位）；如需：`.../mixin/ReloadOnlyRecipesMixinPlugin.java`（compat mixin 条件启用）
+- Owns：`.../reload/RecipeReloadService.java`（填真正逻辑，替换占位）；如需：`.../mixin/reloadonlydataMixinPlugin.java`（compat mixin 条件启用）
 - Reads：`VanillaRecipeReloadStrategy`(PB-1)、`KubeJs6/7RecipeReloadStrategy`(PC-1/2)、`RecipeSync`(PB-2)、`CleanServerResources`(PB-3)
 - 交付/验收：`reload(server)` = `ModList.isLoaded("kubejs")` ? 平台选 6/7 : Vanilla → `strategy.reload()` → `RecipeSync.toAllClients()`；两版 `/reloadrecipes` **端到端可用**（无 KubeJS 达 **M1**；有 KubeJS 达 **M2**）。
 - 映射：task-plan `T2.1`(完成)、`T3.3`、`T3.6`(基础)。
@@ -228,7 +228,7 @@ flowchart LR
 > - **`RECIPES_AFTER_LOADED` 触发**：`KubeJSReloadListener`（`ResourceManagerReloadListener` record）在完整 reload 触发；只重载配方不走该 listener → 不自动触发，**可选**手动 `ServerEvents.RECIPES_AFTER_LOADED.post(...)`（多数场景无需）。
 > - **是否需重建干净 RM**：**否**（与 6 代不同）。7 代虚拟数据包在 `createPackResources` 已注入当前 `server.getResourceManager()`，`reload()` 只更新内容不重复插入 → 只重载配方**直接用 `server.getResourceManager()`** 扫描。
 >
-> **PC-2 兼容流程**：① `sm = ((RecipeManagerKJS) rm).kjs$getResources().kjs$getServerScriptManager()` → ② `sm.reload()` → ③ `map = scan(server.getResourceManager())` → ④ `((RecipeManagerInvoker) rm).reloadonlyrecipes$invokeApply(map, server.getResourceManager(), InactiveProfiler.INSTANCE)`（HEAD/TAIL 自动介入）→ ⑤（可选）post `RECIPES_AFTER_LOADED` → ⑥ 门面统一同步客户端。
+> **PC-2 兼容流程**：① `sm = ((RecipeManagerKJS) rm).kjs$getResources().kjs$getServerScriptManager()` → ② `sm.reload()` → ③ `map = scan(server.getResourceManager())` → ④ `((RecipeManagerInvoker) rm).reloadonlydata$invokeApply(map, server.getResourceManager(), InactiveProfiler.INSTANCE)`（HEAD/TAIL 自动介入）→ ⑤（可选）post `RECIPES_AFTER_LOADED` → ⑥ 门面统一同步客户端。
 > **备注**：duck 接口 `RecipeManagerKJS` / `ReloadableServerResourcesKJS` 经 `modCompileOnly` KubeJS7 直接引用（`//? if neoforge` + 类隔离）；`CleanServerResources`（PB-3）仅 6 代/PC-1 需要。「改 KubeJS `data/` 数据包」为边缘场景，`reload()` 可能不覆盖（主场景是改 `server_scripts` 脚本）。
 
 ---
@@ -238,7 +238,7 @@ flowchart LR
 | 文件 / 目录 | 拥有任务 | 阶段 |
 |---|---|---|
 | `gradle*`, `settings/stonecutter/build.gradle.kts`, `*/gradle.properties`, `META-INF/*.toml` | PA-1 | A |
-| `ReloadOnlyRecipes.java`, `ModConstants.java`, `mixin/RecipeManagerInvoker.java`, `mixin/ReloadOnlyRecipesMixinPlugin.java`※, `reloadonlyrecipes.mixins.json`, `reload/RecipeReloadStrategy.java`, `reload/RecipeReloadService.java`※ | PA-2 | A |
+| `reloadonlydata.java`, `ModConstants.java`, `mixin/RecipeManagerInvoker.java`, `mixin/reloadonlydataMixinPlugin.java`※, `reloadonlydata.mixins.json`, `reload/RecipeReloadStrategy.java`, `reload/RecipeReloadService.java`※ | PA-2 | A |
 | `reload/VanillaRecipeReloadStrategy.java`, `reload/RecipeScanner.java` | PB-1 | B |
 | `reload/RecipeSync.java` | PB-2 | B |
 | `reload/CleanServerResources.java` | PB-3 | B |
@@ -246,12 +246,12 @@ flowchart LR
 | `assets/.../lang/*.json` | PB-5 | B |
 | `compat/kubejs/KubeJs6RecipeReloadStrategy.java` | PC-1 | C |
 | `compat/kubejs/KubeJs7RecipeReloadStrategy.java` | PC-2 | C |
-| `reload/RecipeReloadService.java`※（装配）, `mixin/ReloadOnlyRecipesMixinPlugin.java`※（条件） | PD-1 | D |
+| `reload/RecipeReloadService.java`※（装配）, `mixin/reloadonlydataMixinPlugin.java`※（条件） | PD-1 | D |
 | `reload/RecipeReloadService.java`※（健壮性）, `util/ReloadResult.java` | PE-1 | E |
 | `docs/reload-only-recipes-design.md`, `README.md` | PE-3 | E |
 | `docs/test-report.md` | PF-1 | F |
 
-> ※ `RecipeReloadService.java` 与 `ReloadOnlyRecipesMixinPlugin.java` 由 **A→D→E 跨阶段接力**（骨架→装配→健壮性）。**同阶段绝不共享**；跨阶段串行接力安全。其余文件严格单一归属。
+> ※ `RecipeReloadService.java` 与 `reloadonlydataMixinPlugin.java` 由 **A→D→E 跨阶段接力**（骨架→装配→健壮性）。**同阶段绝不共享**；跨阶段串行接力安全。其余文件严格单一归属。
 
 ---
 

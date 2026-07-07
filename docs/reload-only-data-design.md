@@ -35,7 +35,7 @@
 | **item_modifiers** | `LootDataManager`※ | 同上 | `apply` | ❌ 纯服务端 |
 | **functions**（mcfunction） | `ServerFunctionLibrary` | `reload(...)`（非 apply） | `reload` | ❌ 纯服务端；依赖 function tags |
 
-> ※ **版本差异警告**：1.20.1 的 loot_tables/predicates/item_modifiers 由**同一个** `LootDataManager` 统一管理（按 `LootDataType` 分）；1.20.5+/1.21.1 对 loot 体系做了重构，manager 结构与类名不同，**实现时须一手核实 1.21.1 的对应 manager**（见 §4.4）。
+> ※ **版本差异（已核实）**：1.20.1 的 loot_tables/predicates/item_modifiers 由**同一个** `LootDataManager` 统一管理（按 `LootDataType` 分）；1.21.1 已重构——`LootDataManager` 删除，loot 变 registry-backed（`ReloadableServerRegistries` + `LayeredRegistryAccess`）。两版落地手法见 §4.4。
 
 ### 2.2 ❌ B 类 — Datapack Registries（不可热重载，明确排除）
 
@@ -72,26 +72,28 @@ public interface ReloadTarget {
 
 ```
 reload/
-  ReloadStrategy.java          // reload(server, target)：只重建服务端数据，不同步
-  ReloadService.java           // 门面：按 target pick 策略 → reload → 按需 sync → 统计/回落
+  ReloadTarget.java            // 目标接口（id/reload/sync/needsClientSync/affectedByKubeJS/acceptsArg/suggestArgs/postHint）
+  ReloadService.java           // 门面：target.reload → 按 needsClientSync sync → 统计 → ReloadResult
+  ReloadTargets.java           // 注册表（LinkedHashMap；register/get/ids；静态块注册 5 个 target）
   ContentScanner.java          // 通用扫描：FileToIdConverter.json(<dir>) → Map（原 RecipeScanner 泛化）
+  AdvancementReload.java  TagReload.java  LootReload.java  FunctionReload.java  // 各类型服务端重建
   sync/
-    RecipeSync.java            // 已存在
-    AdvancementSync.java       // 新增
-    TagSync.java               // 新增（单 registry）
+    RecipeSync.java  AdvancementSync.java  TagSync.java
   target/
     RecipesTarget.java  AdvancementsTarget.java  TagsTarget.java  LootTarget.java  FunctionsTarget.java
 mixin/
   RecipeManagerInvoker.java             // 已存在
-  ServerAdvancementManagerInvoker.java  // 新增：@Invoker apply
-  LootDataManagerInvoker.java           // 新增：@Invoker apply（名随版本）
-  TagManagerAccessor.java               // 新增（若需暴露 getTagDir / registry→dir）
+  ServerAdvancementManagerInvoker.java  // @Invoker apply（advancements）
+  TagNetworkSerializationInvoker.java   // static @Invoker serializeToNetwork（tags 单 registry 同步包）
+  MinecraftServerAccessor.java          // @Mutable @Accessor registries（loot 1.21.1 替换 registry access）
 compat/kubejs/                          // 仅 recipes 用，保持不变
 util/
-  ReloadResult.java                     // 复用，增加 target 维度
+  ReloadResult.java                     // record(target, count, millis, sourcePackCount, usedFallback)
 ```
 
 **职责边界不变**：策略只「重建服务端数据」；同步由门面按 `target.needsClientSync()` 决定并调对应 `*Sync`；回落 / 统计 / i18n 统一在门面。
+
+> **落地注**：原设想的 `LootDataManagerInvoker` / `TagManagerAccessor` / `ServerFunctionLibraryInvoker` **均未建**——落地核实发现 loot/functions 的 `reload` 与 `getTagDir` 本身是 public，无需 @Invoker/@Accessor；loot 1.21.1 改用 `MinecraftServerAccessor` 替换 registry access。实际 mixin 仅 3 个：`RecipeManagerInvoker`、`ServerAdvancementManagerInvoker`、`TagNetworkSerializationInvoker` + `MinecraftServerAccessor`。
 
 ### 3.3 门面分发（伪代码）
 
@@ -123,18 +125,18 @@ public static ReloadResult reload(MinecraftServer server, ReloadTarget target) t
 
 `ServerAdvancementManager` 同为 `SimpleJsonResourceReloadListener`，`apply` 签名与 `RecipeManager.apply` 一致，手法完全平移：
 
-1. **Invoker**：`ServerAdvancementManagerInvoker` `@Invoker("apply")`。
-2. **扫描**：目录 `advancements`（1.20.1）/ `advancement`（1.20.5+）——**又一处单复数版本差异**，`//? if` 隔离（同 recipes 的 `recipes`↔`recipe`）。
-3. **依赖**：`apply` 内解析成就条件会用到 predicate/`LootDataManager`——**只重载成就时沿用现有的，不重建**。
-4. **⚠️ 玩家进度重算（recipes 没有的关键步骤）**：重建后必须对每个在线玩家 `player.getAdvancements().reload(server.getAdvancements())`，重新计算已完成 / 进行中，否则进度错乱。
-5. **同步**：`ClientboundUpdateAdvancementsPacket(reset=true, added, removed, progress)`（不是 recipes 的包）。
+1. **Invoker**：`ServerAdvancementManagerInvoker` `@Invoker("apply")`——两版 `protected apply(Map<ResourceLocation,JsonElement>, ResourceManager, ProfilerFiller)` **同签名**（PA-2 javap 核实）。
+2. **扫描**：目录 1.20.1 硬编码 `"advancements"`（复数）/ 1.21.1 `Registries.elementsDirPath(Registries.ADVANCEMENT)` = `"advancement"`（单数）——`//? if` 隔离。
+3. **依赖**：`apply` 内解析成就条件会用到 predicate/loot——**只重载成就时沿用现有的，不重建**。
+4. **⚠️ 玩家进度重算（recipes 没有的关键步骤）**：重建后对每个在线玩家 `player.getAdvancements().reload(server.getAdvancements())`（两版都有），重新计算进度，否则错乱。
+5. **同步（PA-2 修正：用 reload+flushDirty，不手动构造包）**：`PlayerAdvancements.reload(mgr)` 内部置 `isFirstPacket=true` → 紧接 `flushDirty(player)`，由 MC 自发 `reset=true` 全量 `ClientboundUpdateAdvancementsPacket`。**免手动构造包**、规避两版包差异（1.20.1 `Collection<Advancement>` vs 1.21.1 `Collection<AdvancementHolder>`）。
 
 ```java
-// 伪代码
-((ServerAdvancementManagerInvoker) mgr).invokeApply(scan("advancement", rm), rm, InactiveProfiler.INSTANCE);
+// 伪代码（PA-2 核实版）
+((ServerAdvancementManagerInvoker) mgr).invokeApply(scan(ADV_DIR, rm), rm, InactiveProfiler.INSTANCE);
 for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-    p.getAdvancements().reload(server.getAdvancements());   // 重算进度
-    // reload 内部会给该玩家发 UpdateAdvancementsPacket
+    p.getAdvancements().reload(server.getAdvancements());   // 重算进度 + 置 isFirstPacket
+    p.getAdvancements().flushDirty(p);                       // MC 自发 reset=true 全量进度包
 }
 ```
 
@@ -148,11 +150,13 @@ for (ServerPlayer p : server.getPlayerList().getPlayers()) {
 // 单 registry 重载（1.20.1 口径；1.21.1 API 隔离）
 <T> NetworkPayload reloadTagsFor(MinecraftServer server, ResourceKey<? extends Registry<T>> key) {
     Registry<T> registry = server.registryAccess().registryOrThrow(key);
-    String dir = TagManager.getTagDir(key);                 // MC 自算目录，兼容 1.20.1 复数 / 1.21.1 单数；不可见则 Accessor 暴露
+    //? if forge {  String dir = TagManager.getTagDir(key);      // 1.20.1（public static）
+    //?} else {     String dir = Registries.tagsDirPath(key);    // 1.21.1（public static；PA-2 核实：TagManager 无 getTagDir）
+    //?}
     TagLoader<Holder<T>> loader = new TagLoader<>(
         id -> registry.getHolder(ResourceKey.create(key, id)), dir);
     registry.bindTags(convert(loader.loadAndBuild(server.getResourceManager())));  // 全量重绑该 registry
-    return TagNetworkSerialization.serializeToNetwork(registry);                   // 供同步
+    return TagNetworkSerializationInvoker.invokeSerializeToNetwork(registry);      // PA-2：serializeToNetwork 原为 private static，需 @Invoker
 }
 ```
 
@@ -160,24 +164,42 @@ for (ServerPlayer p : server.getPlayerList().getPlayers()) {
 - **同步**：`ClientboundUpdateTagsPacket` 的负载本就是 `Map<ResourceKey<Registry>, NetworkPayload>`，**按 registry 增量更新**——单 registry 就只放一个。新增 `TagSync.toAllClients(server, key, payload)`。
 - **⚠️ Ingredient 提示（不碰缓存，只提示）**：重载会影响配方的 registry（`item`，可含 `block`/`fluid`）后，追加一条黄色提示：
 
-  - i18n `commands.reloadonlyrecipes.reload.tags.ingredient_hint`
+  - i18n `commands.reloadonlydata.reload.tags.ingredient_hint`
     - zh：`提示：标签已更新，但已加载配方的标签型材料（Ingredient）仍是旧缓存、不会自动刷新。如需让配方跟随新标签生效，请接着执行 /reloadrecipes。`
     - en：`Note: tags updated, but tag-based ingredients in already-loaded recipes are still cached and won't refresh. Run /reloadrecipes next to apply.`
   - 触发条件 `affectsRecipes(key)`：`item`/`block`/`fluid` 提示；`entity_type` 等与配方无关的不提示。
 
 ### 4.4 Loot（loot_tables / predicates / item_modifiers）
 
-- **1.20.1**：三者同属 `LootDataManager`（一个 `SimpleJsonResourceReloadListener`，按 `LootDataType` 区分子目录 `loot_tables`/`predicates`/`item_modifiers`）。可对整个 `LootDataManager` `@Invoker apply` 一次性重载三者；扫描交给它内部按 type 处理。
-- **⚠️ 1.21.1**：loot 体系已重构，`LootDataManager` 可能不复存在 / 改名 / 拆分，**实现时必须一手核实 1.21.1 的对应 manager 与 apply 入口**，两版极可能需要不同的 invoker 与整类 `//? if` 隔离。
-- **同步**：loot 是**纯服务端**逻辑（掉落在服务端计算），`needsClientSync()=false`，无需下发包。
-- **KubeJS**：KubeJS 也能改 loot，但注入点与 recipes 不同；本设计**先只做 Vanilla**，KubeJS loot 兼容列为后续（见 §11）。
+> **⚠️ PA-2 javap 核实：两版机制根本不同，且都不是简单 `apply(Map)`——本节已按核实重写（原「1.20.1 @Invoker apply 一次性」假设作废）。**
+
+- **1.20.1**：`LootDataManager implements PreparableReloadListener, LootDataResolver`（**非** SimpleJson）。其 `apply` 是 `private void apply(Map<LootDataType<?>, Map<ResourceLocation,?>>)`（嵌套 Map），**不能**简单 `@Invoker apply(Map,rm,profiler)`。单独重载须走**完整协议** `reload(PreparationBarrier, RM, ProfilerFiller×2, Executor×2)`（mock barrier + executor）。管 3 个 `LootDataType`（PREDICATE/MODIFIER/TABLE，目录 `predicates`/`item_modifiers`/`loot_tables`）。
+- **1.21.1**：`LootDataManager` **已删除**；loot 变 registry-backed：`ReloadableServerRegistries.reload(LayeredRegistryAccess<RegistryLayer>, RM, Executor) : CompletableFuture<LayeredRegistryAccess>`，产出**新** registry access，需替换 server 的 `fullRegistries`。目录 `loot_table`/`predicate`/`item_modifier`（单数，`elementsDirPath`）。
+- **实现影响**：loot 是 5 target 里**最难**、双版本几乎完全分叉、都需异步完整协议 → 整类 `//? if`。
+- **✅ 落地（PE-1，两版 runServer 验证）**：整类 `//? if` 分叉。
+  - **1.20.1**：`server.getLootData()` → `LootDataManager.reload(barrier, rm, InactiveProfiler×2, Util.backgroundExecutor(), Runnable::run).join()`（`reload` 是 **public final、无需 @Invoker**；mock barrier `wait→completedFuture`）；count = `getKeys(LootDataType.TABLE/PREDICATE/MODIFIER)` 之和。
+  - **1.21.1**：`ReloadableServerRegistries.reload(server.registries(), rm, Runnable::run).join()` → 新 `LayeredRegistryAccess` → 经 `MinecraftServerAccessor`（`@Mutable @Accessor("registries")`）替换 server 的 `private final registries`；count = `server.reloadableRegistries().getKeys(Registries.LOOT_TABLE/PREDICATE/ITEM_MODIFIER)` 之和。
+  - **⚠️ 死锁避免**：完整 `reload` 协议的 game/executor 参数用 `Runnable::run`（就地执行）——命令跑在 server 主线程，若传主线程 executor 再 `.join()` 会死锁。
+  - **未建** `LootDataManagerInvoker`（原设想；1.20.1 `reload` 本身 public）。runServer 实测：Forge 1091 / NeoForge 1179 loot entries、无死锁。
+- **同步**：纯服务端（掉落服务端计算），`needsClientSync()=false`。
+- **KubeJS**：注入点与 recipes 不同；本版**只做 Vanilla**，KubeJS loot 列为后续（§11）。
 
 ### 4.5 Functions（mcfunction）
 
-- `ServerFunctionLibrary` 的重载入口是 `reload(...)`（**非** `apply(Map,...)`），签名两版不同，需各自 invoker/调用。
-- **依赖 tags**：function 的 `#tag` 引用依赖 function tags；单独重载 functions 时，若 function tags 也改了需连带（同 §4.3 的 ingredient 提示思路，可给一条 function-tag 提示）。
+> **PA-2 javap 核实：两版 `reload` 签名一致（仅 `CommandFunction` 泛型化）。**
+
+- `ServerFunctionLibrary implements PreparableReloadListener`；入口 `reload(PreparationBarrier, RM, ProfilerFiller×2, Executor×2) : CompletableFuture<Void>`（**完整协议、非 apply**）——两版签名相同（1.20.1 `CommandFunction` / 1.21.1 `CommandFunction<CommandSourceStack>`）。需 mock `PreparationBarrier` + executor；`reload` 内部重编译并重注册到 `CommandDispatcher`。
+- **依赖 tags**：`ServerFunctionLibrary` 内含 `TagLoader`（function tags）；单独重载 functions 时若 function tags 也改了需连带 → 给一条 function-tag 提示（同 §4.3 思路）。目录 1.20.1 `functions`+`tags/functions` / 1.21.1 `function`；扩展 `.mcfunction`。
 - **纯服务端**，无客户端同步。
-- 优先级最低（use case 较少），可放最后。
+- **✅ 落地（PF-1，两版 runServer 验证）**：**5 个 target 里唯一两版完全通用**（无 `//? if`、无 mixin/invoker）：
+  ```java
+  ServerFunctionLibrary lib = server.getServerResources().managers().getFunctionLibrary();
+  lib.reload(barrier, rm, InactiveProfiler.INSTANCE, InactiveProfiler.INSTANCE,
+             Util.backgroundExecutor(), Runnable::run).join();  // reload 是 public，无需 @Invoker；Runnable::run 避死锁（同 loot）
+  server.getFunctions().replaceLibrary(lib);   // ServerFunctionManager 重注册 CommandDispatcher
+  // count = lib.getFunctions().size()
+  ```
+  泛型差异（`CommandFunction` / `CommandFunction<CommandSourceStack>`）不影响调用；`Util` 在 `net.minecraft.Util`。function-tag 依赖提示经通用 `postHint` 钩子（§4.3 同机制）下发。runServer 实测：Forge 0→1（加 datapack function）、NeoForge 0、无死锁。
 
 ---
 
@@ -226,8 +248,8 @@ for (ServerPlayer p : server.getPlayerList().getPlayers()) {
 | 差异 | Forge 1.20.1 | NeoForge 1.21.1 |
 |---|---|---|
 | 目录单复数 | `recipes` / `advancements` / `tags/items` | `recipe` / `advancement` / `tags/item` |
-| loot manager | `LootDataManager`（统一） | **重构，需核实** |
-| functions reload | `ServerFunctionLibrary.reload(...)` 签名 | 签名不同 | 
+| loot manager | `LootDataManager.reload`（public，完整协议） | `ReloadableServerRegistries.reload` + `MinecraftServerAccessor` 替换 registry access（`LootDataManager` 已删） |
+| functions reload | `ServerFunctionLibrary.reload`（public）→ `ServerFunctionManager.replaceLibrary` | **签名/路径一致、代码完全通用**（仅 `CommandFunction` 泛型差异，不影响调用） |
 | registry 遍历 / bindTags | 1.20.1 registry API | 1.21.1 registry API（`RegistryAccess`/`Holder` 有变） |
 | 同步包构造 | `ClientboundUpdate*Packet` 1.20.1 构造 | 1.21.1 构造（部分参数/类型不同） |
 | 运行时映射 | SRG（refmap 必需） | Mojmap（named） |
@@ -242,7 +264,7 @@ for (ServerPlayer p : server.getPlayerList().getPlayers()) {
 - **回落**：仅 recipes 的 KubeJS 策略失败回落 Vanilla；其余 target 失败直接 `sendFailure`（无回落对象）。
 - **坏文件跳过**：`ContentScanner` 沿用「单文件失败记日志跳过、不中断」。
 - **i18n key 规划**：
-  - `commands.reloadonlyrecipes.reload.<target>.success`（`%1$s`=条数/registry、`%2$s`=耗时…按 target 定参数）
+  - `commands.reloadonlydata.reload.<target>.success`（`%1$s`=条数/registry、`%2$s`=耗时…按 target 定参数）
   - `...reload.failed`（`%s`=错误）复用
   - `...reload.fallback`（recipes 专用）复用
   - `...reload.tags.ingredient_hint`（tags 专用，§4.3）
@@ -269,4 +291,4 @@ for (ServerPlayer p : server.getPlayerList().getPlayers()) {
 5. **Functions**：最后，按需。
 6. 每步复用 `ReloadResult` + 回落 + i18n，并按 [parallel-tasks.md](parallel-tasks.md) 的所有权 / CR 协议推进；运行验证沿用 runServer 发命令法。
 
-> **状态**：本文档为泛化总设计，recipes 已落地并双版本 M2 验证通过；advancements / tags / loot / functions 为**待实现**扩展，按 §11 顺序推进。各类型的 1.21.1 具体 manager / apply 入口 / 同步包构造，实现前须按「工作准则」用字节码或一手源码核实，不得凭记忆。
+> **状态（2026-07-07 更新）**：**全部落地并双版本 runServer 验证通过**——recipes（MG0 零回归）/ advancements（MG1）/ tags per-registry（MG2）/ loot（MG3）/ functions（MG4）。各类型 1.21.1 的 manager / 入口 / 同步包均已用 `javap` 一手核实（见 [parallel-tasks.md](rod/parallel-tasks.md) §5 RV1–RV6 及各阶段落地补正）。命令 `/reloadonly <target> [<arg>]` + 保留 `/reloadrecipes` 别名。剩文档验收矩阵（PG-2）。

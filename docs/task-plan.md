@@ -1,4 +1,4 @@
-# ReloadOnlyRecipes 总任务表
+# reloadonlydata 总任务表
 
 > 依据：[reload-only-recipes-design.md](reload-only-recipes-design.md)（核心设计）+ [references/stonecutter.md](references/stonecutter.md) / [references/multiloader-build.md](references/multiloader-build.md) / [references/loader-platform-api.md](references/loader-platform-api.md)（双版本构建与平台差异）。
 > 范围：**双版本**——Forge 1.20.1（Java 17，KubeJS 6）+ NeoForge 1.21.1（Java 21，KubeJS 7）；**纯 Java**；Stonecutter + Architectury Loom flat；核心是「`/reloadrecipes` 命令 + Mixin `@Invoker` 访问 `RecipeManager.apply` + KubeJS 软兼容」。
@@ -29,9 +29,9 @@
 | ☑ T0.6 | 共享 `build.gradle.kts`（flat）：`loom.platform` 分支、Java 版本映射、`officialMojangMappings` | M | T0.3–T0.5 | 两版依赖解析成功；Java 17/21 正确 | `build.gradle.kts` |
 | ☑ T0.7 | `createMinecraftArtifacts dependsOn stonecutterGenerate` | S | T0.6 | 构建用预处理后源码 | `build.gradle.kts` |
 | ☑ T0.8 | **落地版本号**：NeoForge 21.1.x、Loom 版本、KubeJS 6/7 构建号（见「待验证项」R1） | S | T0.6 | 版本号确定并回写属性 | `versions/*/gradle.properties` |
-| ☑ T0.9 | mod 主类 `@Mod`（`//? if` 隔离 forge/neoforge 总线 import） | M | T0.6 | 两版加载打印 `ReloadOnlyRecipes loaded` | `.../ReloadOnlyRecipes.java` |
+| ☑ T0.9 | mod 主类 `@Mod`（`//? if` 隔离 forge/neoforge 总线 import） | M | T0.6 | 两版加载打印 `reloadonlydata loaded` | `.../reloadonlydata.java` |
 | ☑ T0.10 | 元数据 `mods.toml` + `neoforge.mods.toml`（`modLoader=javafml`、`expand` 占位、KubeJS 软依赖声明） | M | T0.9 | `processResources` 输出正确、仅保留当前 loader 文件 | `META-INF/*.toml` |
-| ☑ T0.11 | **验证 M0**：两版 `build` 绿 + `runClient` 进标题页/世界 | M | T0.9,T0.10 | 两版 runClient 均 `ReloadOnlyRecipes loaded` 抵主菜单、无 Exception（Agent1 运行验证） | — |
+| ☑ T0.11 | **验证 M0**：两版 `build` 绿 + `runClient` 进标题页/世界 | M | T0.9,T0.10 | 两版 runClient 均 `reloadonlydata loaded` 抵主菜单、无 Exception（Agent1 运行验证） | — |
 
 ---
 
@@ -39,9 +39,9 @@
 
 | ID | 任务 | 复杂度 | 依赖 | 验收标准 | 涉及文件 |
 |---|---|---|---|---|---|
-| ☑ T1.1 | `reloadonlyrecipes.mixins.json`（package/refmap/mixins/plugin） | S | T0.11 | 两版启动加载 mixin 配置无错 | `resources/reloadonlyrecipes.mixins.json` |
+| ☑ T1.1 | `reloadonlydata.mixins.json`（package/refmap/mixins/plugin） | S | T0.11 | 两版启动加载 mixin 配置无错 | `resources/reloadonlydata.mixins.json` |
 | ☑ T1.2 | `RecipeManagerInvoker`（`@Invoker("apply")`，两版共用） | M | T1.1 | 编译期两版通过；refmap 生成 | `.../mixin/RecipeManagerInvoker.java` |
-| ☑ T1.3 | `ReloadOnlyRecipesMixinPlugin`（`shouldApplyMixin` 用 `LoadingModList` 判断 `kubejs`） | M | T1.1 | 无 KubeJS 时 compat mixin 不加载、有则加载 | `.../mixin/ReloadOnlyRecipesMixinPlugin.java` |
+| ☑ T1.3 | `reloadonlydataMixinPlugin`（`shouldApplyMixin` 用 `LoadingModList` 判断 `kubejs`） | M | T1.1 | 无 KubeJS 时 compat mixin 不加载、有则加载 | `.../mixin/reloadonlydataMixinPlugin.java` |
 | ☑ T1.4 | 在两个 `.toml` 声明 `[[mixins]] config=…` | S | T1.1 | mixin 实际生效 | `META-INF/*.toml` |
 | ☐ T1.5 | **验证**：`((RecipeManagerInvoker) rm).invokeApply(...)` 可编译并在两版运行期解析 | S | T1.2–T1.4 | 临时调用不抛 `AbstractMethodError`/映射错误 | — |
 

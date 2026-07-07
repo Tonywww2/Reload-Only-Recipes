@@ -22,10 +22,10 @@ val javaVersion = if (stonecutter.eval(mcVersion, ">=1.20.6")) 21 else 17
 
 loom {
     silentMojangMappingsLicense()
-    // Mixin refmap 名必须与 mixins.json 的 "refmap" 字段（reloadonlyrecipes.refmap.json）一致。
+    // Mixin refmap 名必须与 mixins.json 的 "refmap" 字段（reloadonlydata.refmap.json）一致。
     // 【生产崩溃修复】Loom remapJar 会为 Forge 生成含 apply→m_5787_ 的 refmap，但若不显式指定名字，
-    // 就会用默认派生名 <archivesName>-refmap.json（如 reloadonlyrecipes-forge-1.20.1-forge-refmap.json），
-    // 与 mixins.json 硬编码的 reloadonlyrecipes.refmap.json 不符 → 生产(SRG)按 mixins.json 的名字
+    // 就会用默认派生名 <archivesName>-refmap.json（如 reloadonlydata-forge-1.20.1-forge-refmap.json），
+    // 与 mixins.json 硬编码的 reloadonlydata.refmap.json 不符 → 生产(SRG)按 mixins.json 的名字
     // 找不到 refmap → @Invoker("apply") 无法映射到 m_5787_ → InvalidAccessorException，并连累所有
     // target RecipeManager 的 mod 一起失败。（dev 用 named 运行时、方法名本就是 apply、不查 refmap，
     // 故此坑在 runClient 下不暴露。）显式对齐 refmap 名即修复；两版共用同名（NeoForge 生产用 Mojmap、
@@ -149,7 +149,7 @@ publishMods {
     // Architectury Loom 的最终（remap 后）产物 — 不是原始 jar 任务输出。
     file = tasks.named<net.fabricmc.loom.task.RemapJarTask>("remapJar").flatMap { it.archiveFile }
     version = project.version.toString() // 形如 0.1.0+1.20.1 — 各 loader 因 mcVersion 不同而唯一
-    displayName = "ReloadOnlyRecipes ${property("mod.version")} · MC $mcVersion ($loaderId)"
+    displayName = "reloadonlydata ${property("mod.version")} · MC $mcVersion ($loaderId)"
     modLoaders.add(loaderId)
     type = STABLE
 
