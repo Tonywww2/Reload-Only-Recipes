@@ -4,13 +4,12 @@
   "package": "com.tonywww.reloadonlydata.mixin",
   "compatibilityLevel": "JAVA_17",
   "refmap": "reloadonlydata.refmap.json",
-  "plugin": "com.tonywww.reloadonlydata.mixin.ReloadOnlyDataMixinPlugin",
+  "plugin": "com.tonywww.reloadonlydata.mixin.reloadonlydataMixinPlugin",
   "mixins": [
     "RecipeManagerInvoker",
     "ServerAdvancementManagerInvoker",
     "TagNetworkSerializationInvoker",
-    "MinecraftServerAccessor",
-    "HolderReferenceInvoker"
+    "MinecraftServerAccessor"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -144,27 +144,31 @@ reloadonly foobar        → Unknown or non-hot-reloadable target: foobar
 
 | 维度 | 结论 |
 |---|---|
-| 替换粒度 | **单-registry 替换**：只重载 `arg` 指定的一个 registry，其余 WORLDGEN registry 保留旧对象引用，合成新 WORLDGEN 层（`ImmutableRegistryAccess`） |
-| 黑名单 | `worldgen/*`（biome/noise/density_function/structure/…）+ `dimension_type` 一律**拒绝**（生成固化型，被 DIMENSIONS/区块引用） |
+| 更新方式 | **就地重绑**：不新建 registry，`unfreeze` 现有 registry → 已存在 key 用 `Holder.Reference.bindValue`（`@Invoker`）更新旧引用值、新 key `register` → `freeze`。旧 registry 与旧 Holder 均不替换、**完全不碰 layered 层结构** |
+| 黑名单 | `worldgen/*`（biome/noise/density_function/structure/…）+ `dimension_type` 一律**拒绝**（生成固化型：即便 rebind 更新 registry，其新值也无法追溯已固化到区块的旧数据） |
 | 允许范围 | 仅**叶子型**（`damage_type`/`enchantment`/`trim_pattern` 等运行时查询型，不被 worldgen 引用） |
 | 客户端 | 运行时不可同步（TV-I2），`postHint` 提示**重连**；`requiresConfirmation=true` |
 
-**⚠️ 存档损坏 bug（整层替换）→ 单-registry 替换修复**：初版用 `RegistryDataLoader.load(全部) + replaceFrom(WORLDGEN, fresh)` **整层替换**，即便只想 reload `damage_type`，整个 WORLDGEN 层被换成全新对象 → DIMENSIONS 层 Holder 引用陈旧 → `stop` 时 `WorldGenSettings.encode` 报大量 `... is not valid in current registry set` → level.dat 的 `dimensions`/`seed` 写空 → **下次启动 `No key dimensions in MapLike[{}]` 无法加载世界（存档损坏，PI-7 实测）**。改为**单-registry 替换**（保留其他 WORLDGEN 对象引用不变）后，DIMENSIONS 引用仍有效，彻底修复。
+**三次迭代到就地重绑（最终方案）**：
+1. **整层替换 → 存档损坏**：初版 `RegistryDataLoader.load(全部) + replaceFrom(WORLDGEN, fresh)` 整层替换，即便只 reload `damage_type`，整个 WORLDGEN 层被换新对象 → DIMENSIONS 层 Holder 引用陈旧 → `stop` 时 `WorldGenSettings.encode` 报大量 `... is not valid in current registry set` → level.dat `dimensions`/`seed` 写空 → 下次启动 `No key dimensions` 存档损坏（PI-7 实测）。
+2. **单-registry 替换（新建 registry）→ 修改不生效**：只重载目标一个 registry、合成新 WORLDGEN 层修了存档，但**新建 registry = 新 Holder.Reference**；`DamageSources` 在 world 加载时缓存了各 `DamageSource`（内含旧 `Holder<DamageType>`），替换后缓存旧 Holder 不更新 → **修改已存在对象的值运行时读不到**（用户报告）。
+3. **就地重绑（最终）**：不新建 registry，`unfreeze` 现有 registry → 已存在 key `bindValue` 更新**旧** Holder.Reference 的值、新 key `register` → `freeze`。旧 registry 与旧 Holder 均不替换 → `DamageSources` 缓存的 `DamageSource.type()`（=`typeHolder().value()`）立即看到新值；且**完全不碰 layered 层 → 从根杜绝存档损坏**。
 
 **验收矩阵**：
 
 | 项 | Forge 1.20.1 | NeoForge 1.21.1 |
 |---|---|---|
-| `registry minecraft:damage_type confirm`（叶子型） | ✅ 44 条 / 8 ms | ✅ 48 条 / 2 ms |
+| `registry minecraft:damage_type confirm`（基线，全走 `bindValue`） | ✅ 44 条 / 21 ms | ✅ 48 条 / 3 ms（@Invoker protected bindValue×48 不崩） |
+| **新增**（运行时新建 `rvtest:foo`，`register` 分支） | ✅ 44→45 | —（KubeJS7 命名空间索引固化限制，见下） |
+| **修改已存在**（`foo` exhaustion 0.1→0.5，`bindValue` 分支） | ✅ **稳定 45、不崩、不重不丢** | ✅ 修改已有命名空间走 bindValue |
 | `registry minecraft:worldgen/biome confirm`（黑名单） | ✅ 拒绝（`Failed to reload: … blacklisted`） | ✅ 拒绝 |
 | 无 `confirm`（`requiresConfirmation`） | ✅ 只发 `registry.warn`、不执行 | ✅ 同 |
 | `postHint`（client_hint） | ✅ `Reconnect to apply…` | ✅ |
 | 零回归 `recipes` | ✅ 1174 | ✅ 1289 |
-| `stop` 干净（**无** `not valid` WARN） | ✅ `All dimensions are saved` | ✅ 同 |
-| **重启存档未损坏** | ✅ **会话 2 `Done (3.480s)!` 正常加载** | ✅（stop 无 WARN 间接坐实） |
+| `stop` 干净 + 存档不损坏（就地重绑不碰层） | ✅ `All dimensions are saved`、无 `not valid` WARN | ✅ 同 |
 
-- **Forge 双会话铁证**：会话 1 reload `damage_type` → `stop`（干净、无 `not valid` WARN）；**会话 2 重启世界正常加载**（`Done`，无 `No key dimensions`）= 单-registry 替换不损坏存档。（对照：整层替换初版 stop 后重启即崩 `No key dimensions`。）
-- **两版机制通用**：仅 `DataPackRegistriesHooks` 包名 `//? if`；`RegistryAccess.ImmutableRegistryAccess(Map)` / `registries()` / `freeze()` / `RegistryEntry.key()/value()` 两版一致（javap 核实）。
+- **就地重绑的存档安全**：完全不碰 layered 层结构（不 `replaceFrom`/`setRegistries`），DIMENSIONS 层原封不动 → `stop` 干净（`All dimensions are saved`）、无 `not valid` WARN、无 `No key dimensions`，无需重启二次验证。
+- **两版机制通用**：`HolderReferenceInvoker`（`@Invoker("bindValue")`）——`bindValue` Forge public / NeoForge **protected**，统一 `@Invoker` 调用（NeoForge 基线 48 走 `bindValue`×48 不崩坐实）；`MappedRegistry.unfreeze()/freeze()/getHolder()`、`Registry.entrySet()` 两版通用；`register` 第三参 Forge `Lifecycle.stable()` / NeoForge `RegistrationInfo.BUILT_IN`（`//? if`）。
 - **★ RV7 修复（运行时新增命名空间可读）**：`RegistryDataLoader.load` 的 RM 从 `server.getResourceManager()` 改为 `KubeJsCompat.openReloadResourceManager(server)`（try-with-resources），重建 RM + 全新命名空间索引——否则 `MultiPackResourceManager` 的命名空间→packs 索引在构造时固化，运行时经 KubeJS/datapack 新建的**新命名空间** registry 内容读不到（与 loot/advancements/tags/functions 同源修复）。**Forge 实测坐实**：服务器启动后运行时新建 `kubejs/data/rvtest/damage_type/rv7_test.json`（`rvtest` = 启动时不存在的新命名空间）→ `reloadonly registry minecraft:damage_type` 日志出现 `# Walking namespace 'rvtest'` + `File found: 'rvtest:damage_type/rv7_test.json'` → **44→45**（修复前索引固化会仍读 44）；stop 干净、存档不损坏。
 - **客户端表现（TV-I2 如实记录）**：客户端 registry 仅在**加入（configuration 阶段）**时同步，play 阶段无接收路径 → 运行时发包无效，广播 `client_hint` 提示**重连**；已连客户端需重连才见新 registry。生成固化型（biome 等）**不允许 reload**（黑名单），故无「已生成世界残留」问题。
 - **MI1（mod registry）**：`suggestArgs` 迭代 `getDataPackRegistries()`（含 mod 经 `DataPackRegistryEvent` 注册的、非黑名单的），mod 自定义叶子型 registry 走同一路径可热重载；本环境 mod（`betteradvancedtooltips` 等）未注册自定义 datapack registry，故 mod registry 热重载留**用户带自定义 registry 的 mod 坐实**（机制已通）。

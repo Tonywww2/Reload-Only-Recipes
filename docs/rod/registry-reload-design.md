@@ -75,13 +75,13 @@ flowchart TD
 
 ## 4. 架构设计
 
-### 4.1 `RegistryReloadTarget`（单-registry 替换 + 黑名单）
+### 4.1 `RegistryReloadTarget`（就地重绑 + 黑名单）
 
 实现现有 `ReloadTarget` 接口（与阶段 H 同框架），包装 `registry` 单 target（arg = registry key）。
 
-> **⚠️ PI-7 决定性修正（CR-I2）**：初版用**整层替换**（`RegistryDataLoader.load(全部) → replaceFrom(WORLDGEN, fresh)`），实测**即便只 reload `damage_type` 也损坏存档**——整个 WORLDGEN 层被换成全新对象，DIMENSIONS 层 Holder 引用陈旧 → `stop` 时 `WorldGenSettings.encode` 报大量 `is not valid in current registry set` → level.dat 的 `dimensions`/`seed` 写空 → **下次启动 `No key dimensions` 无法加载世界**。改为**单-registry 替换**。
+> **⚠️ 三次迭代到就地重绑（CR-I2/CR-I3）**：① 初版**整层替换**（`replaceFrom(WORLDGEN, fresh)`）即便只 reload `damage_type` 也损坏存档（DIMENSIONS 引用陈旧 → `WorldGenSettings.encode` 失败 → level.dat 丢 `dimensions`/`seed` → 启动 `No key dimensions`）；② **单-registry 替换**（新建 registry 合成新层）修了存档，但**新建 registry = 新 Holder**，`DamageSources` 等 world 加载时缓存的旧 `Holder` 不更新 → **修改已存在对象不生效**；③ 最终**就地重绑**：不新建 registry，把新值写回旧 Holder。
 
-**单-registry 替换机制（两版通用）**：只重载目标一个 registry，其余 WORLDGEN registry **保留旧对象引用**，合成新 WORLDGEN 层：
+**就地重绑机制（两版通用）**：`unfreeze` 现有 registry → 已存在 key `bindValue` 更新旧引用值、新 key `register` → `freeze`。旧 registry 与旧 `Holder.Reference` 均不替换，**完全不碰 layered 层**：
 
 ```java
 public int reload(MinecraftServer server, String arg) {
@@ -91,30 +91,32 @@ public int reload(MinecraftServer server, String arg) {
     LayeredRegistryAccess<RegistryLayer> layered = ((MinecraftServerAccessor) server).getRegistries();
     ResourceKey<? extends Registry<?>> targetKey = ResourceKey.createRegistryKey(targetId);
     RegistryData<?> targetData = /* 从 getDataPackRegistries() 按 key 找 */;
-    RegistryAccess.Frozen oldWorldgen = layered.getLayer(RegistryLayer.WORLDGEN);
     // 1. 只 load 目标一个 registry（RM 用 openReloadResourceManager 重建、含运行时新增命名空间；RV7）
-    RegistryAccess.Frozen freshOne;
+    RegistryAccess.Frozen freshAccess;
     try (CloseableResourceManager rm = KubeJsCompat.openReloadResourceManager(server)) {
-        freshOne = RegistryDataLoader.load(
+        freshAccess = RegistryDataLoader.load(
             rm, layered.getAccessForLoading(RegistryLayer.WORLDGEN), List.of(targetData));
     }
-    Registry<?> newReg = freshOne.registryOrThrow(targetKey);
-    // 2. 合成：旧全部 registry（同引用）+ 目标替换为新
-    Map<ResourceKey<? extends Registry<?>>, Registry<?>> merged = new HashMap<>();
-    oldWorldgen.registries().forEach(e -> merged.put(e.key(), e.value()));
-    merged.put(targetKey, newReg);
-    RegistryAccess.Frozen newWorldgen = new RegistryAccess.ImmutableRegistryAccess(merged).freeze();
-    // 3. 替换 WORLDGEN（显式带 DIMENSIONS/RELOADABLE 旧层，否则 replaceFrom 截断丢失）
-    ((MinecraftServerAccessor) server).setRegistries(
-        layered.replaceFrom(RegistryLayer.WORLDGEN, newWorldgen,
-            layered.getLayer(RegistryLayer.DIMENSIONS), layered.getLayer(RegistryLayer.RELOADABLE)));
-    return newReg.keySet().size();
+    // 2. 就地重绑到【现有】registry（不新建、不碰层）
+    MappedRegistry live = (MappedRegistry) layered.getLayer(RegistryLayer.WORLDGEN).registryOrThrow(targetKey);
+    Registry fresh = freshAccess.registryOrThrow(targetKey);
+    live.unfreeze();
+    for (Map.Entry e : fresh.entrySet()) {
+        Optional<Holder.Reference> existing = live.getHolder((ResourceKey) e.getKey());
+        if (existing.isPresent())
+            ((HolderReferenceInvoker) existing.get()).reloadonlydata$bindValue(e.getValue()); // 更新旧 Holder
+        else //? if forge { Lifecycle.stable() } else { RegistrationInfo.BUILT_IN }
+            live.register((ResourceKey) e.getKey(), e.getValue(), RegistrationInfo.BUILT_IN);
+    }
+    live.freeze();
+    return live.keySet().size();
 }
 ```
 
-- **为何不损坏存档**：DIMENSIONS 层引用的 biome/density_function 等仍是**旧 WORLDGEN 中的同一对象**（保留引用），`encode` 不失效。
-- **黑名单**（`isBlacklisted`）：`worldgen/*` path 前缀 + `dimension_type`/`dimension`（生成固化型，被 DIMENSIONS/区块引用，单独替换仍破坏一致性）。`suggestArgs` 剔除、`reload` 拒绝。仅叶子型（不被 worldgen 引用的运行时查询型）可重载。
-- **两版一致**：仅 `DataPackRegistriesHooks` 包名 `//? if`；`ImmutableRegistryAccess(Map)`/`registries()`/`freeze()`/`RegistryEntry.key()/value()` 两版 javap 核实一致。
+- **为何修改生效**：`bindValue` 更新的是**旧** `Holder.Reference`（`DamageSources` 缓存的同一个）→ `DamageSource.type()`(=`typeHolder().value()`) 立即返回新值。
+- **为何不损坏存档**：完全不碰 `LayeredRegistryAccess` 层结构（不 `replaceFrom`/`setRegistries`）→ DIMENSIONS 原封不动。
+- **黑名单**（`isBlacklisted`）：`worldgen/*` path 前缀 + `dimension_type`/`dimension`（生成固化型：新值无法追溯已固化到区块的旧数据）。`suggestArgs` 剔除、`reload` 拒绝。仅叶子型可重载。
+- **两版一致**：`HolderReferenceInvoker` `@Invoker("bindValue")`（Forge public / NeoForge protected 统一）；`MappedRegistry.unfreeze/freeze/getHolder`、`Registry.entrySet` 通用；`register` 第三参 `Lifecycle.stable()`(forge)/`RegistrationInfo.BUILT_IN`(neo) 与 `DataPackRegistriesHooks` 包名 `//? if`。
 
 ### 4.2 自动纳入（含 mod `DataPackRegistryEvent`）
 

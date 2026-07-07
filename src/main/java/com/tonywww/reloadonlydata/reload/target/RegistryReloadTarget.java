@@ -1,9 +1,12 @@
 package com.tonywww.reloadonlydata.reload.target;
 
 import com.tonywww.reloadonlydata.compat.kubejs.KubeJsCompat;
+import com.tonywww.reloadonlydata.mixin.HolderReferenceInvoker;
 import com.tonywww.reloadonlydata.mixin.MinecraftServerAccessor;
 import com.tonywww.reloadonlydata.reload.ReloadTarget;
+import net.minecraft.core.Holder;
 import net.minecraft.core.LayeredRegistryAccess;
+import net.minecraft.core.MappedRegistry;
 import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.chat.Component;
@@ -20,30 +23,34 @@ import net.neoforged.neoforge.registries.DataPackRegistriesHooks;
 //?}
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
  * registry 热重载（阶段 I）—— 接管 datapack registry（{@code WORLDGEN} 层，含 mod 经
  * {@code DataPackRegistryEvent} 注册的自定义 registry）。突破「B 类不可热重载」边界。
  *
- * <p><b>单-registry 替换（关键）</b>：<b>只</b>重载 {@code arg} 指定的那一个 registry，其余 WORLDGEN
- * registry <b>保留旧对象引用不变</b>，再把「旧全部 + 目标新载入」合成新 WORLDGEN 层。这样 DIMENSIONS
- * 层引用的 biome/density_function 等仍是<b>同一旧对象</b>（有效），避免整层替换导致
- * {@code WorldGenSettings.encode} 引用失效 → level.dat 维度/种子丢失 →<b>存档损坏</b>（PI-7 实测：
- * 整层替换 {@code replaceFrom(WORLDGEN, fresh)} 后重启抛「No key dimensions」无法加载世界）。
+ * <p><b>就地重绑（关键）</b>：<b>不新建 registry</b>，而是把新数据写回<b>现有</b> registry——已存在 key 用
+ * {@link Holder.Reference#bindValue}（经 {@link HolderReferenceInvoker}）更新旧引用的值，新 key 用
+ * {@code register}。registry 对象与旧 {@code Holder.Reference} 均不替换，故 world 加载时<b>缓存了旧
+ * Holder 的消费方</b>（如 {@code DamageSources} 的各 {@code DamageSource}，{@code type()}={@code typeHolder().value()}）
+ * <b>立即看到新值</b>——解决「修改已存在对象重载后不生效」（新建 registry 会让缓存旧 Holder 失效不更新）。
+ *
+ * <p><b>无存档损坏</b>：完全<b>不碰 {@code LayeredRegistryAccess} 层结构</b>（不 {@code replaceFrom}/
+ * {@code setRegistries}）——DIMENSIONS 层引用的 biome/density_function 等原封不动，从根上杜绝整层替换
+ * 曾导致的 {@code WorldGenSettings.encode} 引用失效 → level.dat 丢维度/种子 → 「No key dimensions」存档损坏。
  *
  * <p><b>黑名单（生成固化型）</b>：{@link #isBlacklisted}——{@code worldgen/*} + {@code dimension_type}
- * 等被 DIMENSIONS/已生成区块固化引用的 registry，即便单-registry 替换也会破坏「新对象 vs 世界残留旧引用」
- * 一致性，故一律<b>拒绝</b>热重载并从 {@link #suggestArgs} 剔除。仅<b>叶子型</b>（damage_type/enchantment/
+ * 等被 DIMENSIONS/已生成区块固化引用的 registry，即便就地重绑，其新值也无法追溯已固化到区块的旧数据，
+ * 故一律<b>拒绝</b>热重载并从 {@link #suggestArgs} 剔除。仅<b>叶子型</b>（damage_type/enchantment/
  * trim_pattern 等不被 worldgen 引用的运行时查询型）可安全热重载。
  *
- * <p><b>三步机制</b>（复用 loot 已验证的 {@link MinecraftServerAccessor} 替换）：{@link RegistryDataLoader#load}
- * 只载入目标一个 registry → 合成新 WORLDGEN（{@link RegistryAccess.ImmutableRegistryAccess}）→
- * {@code replaceFrom(WORLDGEN, newWorldgen, DIMENSIONS, RELOADABLE)} → {@code setRegistries}。
- * 两版通用（仅 {@code DataPackRegistriesHooks} 包名 {@code //? if}）。
+ * <p><b>机制</b>：{@link RegistryDataLoader#load} 只载入目标一个 registry（RM 用
+ * {@code openReloadResourceManager} 重建、含运行时新增命名空间，RV7）→ {@code unfreeze} 现有 registry →
+ * 逐 key {@code bindValue}/{@code register} → {@code freeze}。两版通用（仅 {@code DataPackRegistriesHooks}
+ * 包名与 {@code register} 第三参 {@code Lifecycle}/{@code RegistrationInfo} 的 {@code //? if}）。
  *
  * <p><b>确认与告知</b>：{@link #requiresConfirmation()}=true（命令层无 {@code confirm} 时先发警告，见 PI-5）；
  * <b>客户端 registry 运行时不可同步</b>（TV-I2：play 阶段客户端无 registry 接收，必须重连），故
@@ -94,38 +101,53 @@ public final class RegistryReloadTarget implements ReloadTarget {
             throw new IllegalArgumentException("Unknown datapack registry: " + targetId);
         }
 
-        RegistryAccess.Frozen oldWorldgen = layered.getLayer(RegistryLayer.WORLDGEN);
-
-        // ★ 单-registry 替换：只重载目标一个 registry（以下层 STATIC 为 lookup 基准），其余 WORLDGEN
-        //   registry 保留旧对象引用，使 DIMENSIONS 层引用的 biome/density_function 等仍有效
-        //   → level.dat encode 不失效、存档不损坏（对比整层替换会丢 dimensions/seed）。
-        // ⚠️ RM 必须用 openReloadResourceManager（重建 RM + 命名空间索引），不能直接 server.getResourceManager()：
-        //   后者命名空间→packs 索引在构造时固化，运行时经 KubeJS/datapack 新建的 registry 内容（新命名空间）
-        //   读不到（RV7 陷阱，同 loot/advancements/tags/functions 的修复）。try-with-resources 关闭。
-        RegistryAccess.Frozen freshOne;
+        // 载入目标 registry 的新数据到临时 access（RM 用 openReloadResourceManager 重建、含运行时新增命名空间，RV7）。
+        RegistryAccess.Frozen freshAccess;
         try (CloseableResourceManager rm = KubeJsCompat.openReloadResourceManager(server)) {
-            freshOne = RegistryDataLoader.load(
+            freshAccess = RegistryDataLoader.load(
                 rm,
                 layered.getAccessForLoading(RegistryLayer.WORLDGEN),
                 List.of(targetData));
         }
-        Registry<?> newReg = freshOne.registryOrThrow(targetRegKey);
 
-        // 合成新 WORLDGEN 层：旧全部 registry（同引用）+ 目标替换为新载入的。
-        Map<ResourceKey<? extends Registry<?>>, Registry<?>> merged = new HashMap<>();
-        oldWorldgen.registries().forEach(e -> merged.put(e.key(), e.value()));
-        merged.put(targetRegKey, newReg);
-        RegistryAccess.Frozen newWorldgen = new RegistryAccess.ImmutableRegistryAccess(merged).freeze();
+        // ★ 就地重绑：把新数据写回现有 registry 的旧 Holder（bindValue 已存在 / register 新增），
+        //   registry 对象与旧 Holder.Reference 均不替换——故 world 加载时缓存了旧 Holder 的消费方
+        //   （如 DamageSources 的各 DamageSource）立即看到新值；且完全不碰 layered 层结构 → 无存档损坏风险。
+        Registry<?> live = layered.getLayer(RegistryLayer.WORLDGEN).registryOrThrow(targetRegKey);
+        Registry<?> fresh = freshAccess.registryOrThrow(targetRegKey);
+        return rebindInPlace(live, fresh);
+    }
 
-        // 替换 WORLDGEN 层（必须显式带上 DIMENSIONS/RELOADABLE 旧层，否则 replaceFrom 截断丢失它们）。
-        LayeredRegistryAccess<RegistryLayer> updated = layered.replaceFrom(
-            RegistryLayer.WORLDGEN,
-            newWorldgen,
-            layered.getLayer(RegistryLayer.DIMENSIONS),
-            layered.getLayer(RegistryLayer.RELOADABLE));
-        accessor.reloadonlydata$setRegistries(updated);
-
-        return newReg.keySet().size();
+    /**
+     * 就地把 {@code freshReg} 的内容重绑进 {@code liveReg}（同一 registry 对象）：已存在 key 用
+     * {@link Holder.Reference#bindValue} 更新旧引用的值（缓存旧 Holder 处立即生效），新 key 用
+     * {@code register}。{@code unfreeze}→改→{@code freeze}（同 MC 载入时的 register+freeze）。
+     * 注：不处理已删除的 key（旧有新无）——registry 条目一般只增改，删除需重进世界。
+     * 泛型经 raw type 擦除（两 registry 元素类型一致，运行时安全）。
+     */
+    @SuppressWarnings({"unchecked", "rawtypes", "deprecation"})
+    private static int rebindInPlace(Registry liveReg, Registry freshReg) {
+        MappedRegistry live = (MappedRegistry) liveReg;
+        live.unfreeze();
+        for (Object entry : freshReg.entrySet()) {
+            Map.Entry e = (Map.Entry) entry;
+            ResourceKey key = (ResourceKey) e.getKey();
+            Object value = e.getValue();
+            Optional<Holder.Reference> existing = live.getHolder(key);
+            if (existing.isPresent()) {
+                // 更新旧 Holder.Reference 指向的值——缓存该 Holder 的消费方（DamageSources 等）随之看到新值。
+                ((HolderReferenceInvoker) (Object) existing.get()).reloadonlydata$bindValue(value);
+            } else {
+                // 新增 key：注册到现有 registry（register 第三参两版异，//? if）。
+                //? if forge {
+                /*live.register(key, value, com.mojang.serialization.Lifecycle.stable());
+                *///?} else {
+                live.register(key, value, net.minecraft.core.RegistrationInfo.BUILT_IN);
+                //?}
+            }
+        }
+        live.freeze();
+        return live.keySet().size();
     }
 
     /** {@code <arg>} 动态补全：仅可安全热重载的（叶子型）datapack registry key；黑名单（worldgen 固化型）不列出。 */
