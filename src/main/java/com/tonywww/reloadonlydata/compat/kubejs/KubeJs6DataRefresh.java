@@ -23,8 +23,9 @@ import dev.latvian.mods.kubejs.server.ServerScriptManager;
  * {@code kubejs/data/}</b>，从而读到运行时新建的文件。
  *
  * <p><b>整类 Forge 专属</b>（{@code //? if forge}）：NeoForge（KubeJS 7）的 {@code KubeFileResourcePack}
- * 实时读取文件系统、无此问题，故不装配本类；NeoForge 节点为空实现（抛异常，不引用任何 KubeJS 符号）。
- * 由 {@link KubeJsCompat} 在 Forge + {@code ModList.isLoaded("kubejs")} 时调用。
+ * 是<b>同款</b>内存快照问题（此前误判为「实时读取文件系统」），由对称的 {@link KubeJs7DataRefresh}
+ * （追加新建 {@code KubeFileResourcePack} 重扫）处理；两代 API 不同、各自独立成类。本类 NeoForge 节点为空
+ * 实现（抛异常，不引用任何 KubeJS 符号）。由 {@link KubeJsCompat} 在 Forge + {@code ModList.isLoaded("kubejs")} 时调用。
  */
 public final class KubeJs6DataRefresh {
 

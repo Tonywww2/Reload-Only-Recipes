@@ -159,7 +159,7 @@ reloadonly foobar        → Unknown or non-hot-reloadable target: foobar
 | 项 | Forge 1.20.1 | NeoForge 1.21.1 |
 |---|---|---|
 | `registry minecraft:damage_type confirm`（基线，全走 `bindValue`） | ✅ 44 条 / 21 ms | ✅ 48 条 / 3 ms（@Invoker protected bindValue×48 不崩） |
-| **新增**（运行时新建 `rvtest:foo`，`register` 分支） | ✅ 44→45 | —（KubeJS7 命名空间索引固化限制，见下） |
+| **新增**（运行时新建 `rvtest:foo`，`register` 分支） | ✅ 44→45 | ✅ 48→49→50（`KubeJs7DataRefresh` 修复，见 §5.10） |
 | **修改已存在**（`foo` exhaustion 0.1→0.5，`bindValue` 分支） | ✅ **稳定 45、不崩、不重不丢** | ✅ 修改已有命名空间走 bindValue |
 | `registry minecraft:worldgen/biome confirm`（黑名单） | ✅ 拒绝（`Failed to reload: … blacklisted`） | ✅ 拒绝 |
 | 无 `confirm`（`requiresConfirmation`） | ✅ 只发 `registry.warn`、不执行 | ✅ 同 |
@@ -172,6 +172,41 @@ reloadonly foobar        → Unknown or non-hot-reloadable target: foobar
 - **★ RV7 修复（运行时新增命名空间可读）**：`RegistryDataLoader.load` 的 RM 从 `server.getResourceManager()` 改为 `KubeJsCompat.openReloadResourceManager(server)`（try-with-resources），重建 RM + 全新命名空间索引——否则 `MultiPackResourceManager` 的命名空间→packs 索引在构造时固化，运行时经 KubeJS/datapack 新建的**新命名空间** registry 内容读不到（与 loot/advancements/tags/functions 同源修复）。**Forge 实测坐实**：服务器启动后运行时新建 `kubejs/data/rvtest/damage_type/rv7_test.json`（`rvtest` = 启动时不存在的新命名空间）→ `reloadonly registry minecraft:damage_type` 日志出现 `# Walking namespace 'rvtest'` + `File found: 'rvtest:damage_type/rv7_test.json'` → **44→45**（修复前索引固化会仍读 44）；stop 干净、存档不损坏。
 - **客户端表现（TV-I2 如实记录）**：客户端 registry 仅在**加入（configuration 阶段）**时同步，play 阶段无接收路径 → 运行时发包无效，广播 `client_hint` 提示**重连**；已连客户端需重连才见新 registry。生成固化型（biome 等）**不允许 reload**（黑名单），故无「已生成世界残留」问题。
 - **MI1（mod registry）**：`suggestArgs` 迭代 `getDataPackRegistries()`（含 mod 经 `DataPackRegistryEvent` 注册的、非黑名单的），mod 自定义叶子型 registry 走同一路径可热重载；本环境 mod（`betteradvancedtooltips` 等）未注册自定义 datapack registry，故 mod registry 热重载留**用户带自定义 registry 的 mod 坐实**（机制已通）。
+
+---
+
+### 5.10 KubeJS 7（NeoForge）KubeFileResourcePack 内存快照修复（跨类型 · 2026-07-07 · Agent1）
+
+补齐 RV7 在 **NeoForge + KubeJS 7** 侧的修复（§5.9 验收矩阵中 NeoForge「新增命名空间」列此前的「—」限制现已解除）。
+
+**推翻旧假设**：此前文档 / `KubeJsCompat` javadoc 记 `KubeFileResourcePack`「实时读取文件系统」——**错误**。javap 核实 `dev.latvian.mods.kubejs.script.data.KubeFileResourcePack` 实为**内存快照**（与 KubeJS 6 的 `GeneratedServerResourcePack` 同构）：
+
+- `getGenerated()`：`generated == null` → `generate()`（空方法 `0: return`）+ `Files.list(KubeJSPaths.get(SERVER_DATA))` 扫 `kubejs/data/` 各命名空间入内存 `Map<ResourceLocation, GeneratedData>`，之后从内存读、不再碰文件系统；
+- `getNamespaces()`：`generatedNamespaces == null` → 经 `getGenerated()` 收集各条目命名空间入 `generatedNamespaces`、**一次性固化**。
+
+因此启动时 `kubejs/data/` 若无某命名空间（日志 `Validated 0 files in kubejs/data/`），server 现有 RM 的 `namespacedManagers` 索引即固化不含它，运行时新建读不到——与 KubeJS 6 **同款根因**。
+
+**修复**：新增 `compat/kubejs/KubeJs7DataRefresh`（整类 `//? if neoforge`，对称 `KubeJs6DataRefresh`）：
+
+```java
+List<PackResources> packs = new ArrayList<>(server.getPackRepository().openAllSelected());
+packs.add(new KubeFileResourcePack(PackType.SERVER_DATA)); // 新建实例 generated==null
+return new MultiPackResourceManager(PackType.SERVER_DATA, packs);
+```
+
+新建的 `KubeFileResourcePack` 置列表末尾 → `MultiPackResourceManager` 构造对每个 pack 调 `getNamespaces()`，触发新 pack 的 `getGenerated()` **重扫** `kubejs/data/`（含运行时新建命名空间/文件）、命名空间索引重建；末尾 pack 在 `FallbackResourceManager` 中覆盖启动时固化的旧实例。`new KubeFileResourcePack(PackType)` 是 public 构造（javap 确认；KubeJS 自身 `createPackResources` 内部正是这样 new）。`KubeJsCompat.openReloadResourceManager` 的 NeoForge 分支接入 `if (ModList.get().isLoaded("kubejs")) return KubeJs7DataRefresh.openWrappedResources(server);`（import 平台分叉 `net.neoforged.fml.ModList`）。
+
+**NeoForge 实测坐实**（复现「初始无该命名空间」——`kubejs/data/` 空启动，日志 `Validated 0 files`、14 data packs 含固化的 `KubeJS File Resource Pack [data]`）：
+
+| 步骤 | 结果 |
+|---|---|
+| 基线 `registry damage_type confirm`（现有 `minecraft:*` 全读到） | ✅ **48**（`openReloadResourceManager` 未破坏现有命名空间） |
+| 运行时新建 `kubejs/data/rvtest/damage_type/foo.json`（**新命名空间** `rvtest`）→ reload | ✅ **48→49**（读到新命名空间！修复前索引固化仍读 48） |
+| 重复 reload（幂等） | ✅ **49**（不重复、不丢失） |
+| 再新建 `bar.json` → reload | ✅ **49→50**（**每次 reload 都重扫**，非一次性缓存） |
+| `stop` | ✅ 干净（`Saving worlds` / `All dimensions are saved` / `Closed KubeJS Virtual Resource Pack` / `BUILD SUCCESSFUL`），`level.dat` 完好 1743 bytes（rebind-in-place 不碰 layered 层、无存档损坏） |
+
+至此 **KubeJS 6（Forge，`wrapResourceManager`）+ KubeJS 7（NeoForge，新建 `KubeFileResourcePack`）** 两侧运行时新建命名空间问题**全部修复**；所有非 recipes target（loot/advancement/tag/function/registry）经 `openReloadResourceManager` 统一走对应平台重扫。两版 `compileJava` 绿、无警告。
 
 ---
 
