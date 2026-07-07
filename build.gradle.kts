@@ -5,6 +5,8 @@ plugins {
     // unfixable mapping conflicts（Failed to remap minecraft）；改用 Blackboard 同结构项目验证过的
     // 1.11-SNAPSHOT（配 Gradle 9.6.1，见 gradle-wrapper.properties）。
     id("dev.architectury.loom") version "1.11-SNAPSHOT"
+    // CurseForge/Modrinth/GitHub 发布插件（2.x 需 Gradle 9+，本项目 wrapper 为 9.6.1）。
+    id("me.modmuss50.mod-publish-plugin") version "2.1.1"
 }
 
 val loader = loom.platform.get()
@@ -113,6 +115,7 @@ tasks {
             "id" to project.property("mod.id"),
             "name" to project.property("mod.name"),
             "version" to project.property("mod.version"),
+            "authors" to project.property("mod.authors"),
             "pack_format" to project.property("pack_format"),
         )
         inputs.properties(props)
@@ -127,4 +130,44 @@ tasks {
 java {
     withSourcesJar()
     toolchain.languageVersion = JavaLanguageVersion.of(javaVersion)
+}
+
+// ---------------------------------------------------------------------------------------------------
+// CurseForge 发布 — me.modmuss50.mod-publish-plugin。
+//
+// 上传本 loader 节点的 remap jar；根 stonecutter.gradle.kts 的 publishAllVersions 跨每个 loader 一次性发布。
+// 机密/id 懒读取（仅发布任务实际运行时），普通构建不受影响：
+//   • CURSEFORGE_TOKEN     — 环境变量（CI 首选），或用户级 ~/.gradle/gradle.properties 的 curseforge.token（切勿提交）。
+//   • curseforge.projectId — CurseForge 项目页 "About Project" 的数字 id（非机密，在 gradle.properties）。
+//
+// 用法：
+//   ./gradlew publishAllVersions                          # 两个 loader
+//   ./gradlew :1.20.1-forge:publishMods                   # 单个 loader
+//   ./gradlew publishAllVersions -Ppublish.dryRun=true    # 验证全流程、不上传
+// ---------------------------------------------------------------------------------------------------
+publishMods {
+    // Architectury Loom 的最终（remap 后）产物 — 不是原始 jar 任务输出。
+    file = tasks.named<net.fabricmc.loom.task.RemapJarTask>("remapJar").flatMap { it.archiveFile }
+    version = project.version.toString() // 形如 0.1.0+1.20.1 — 各 loader 因 mcVersion 不同而唯一
+    displayName = "ReloadOnlyRecipes ${property("mod.version")} · MC $mcVersion ($loaderId)"
+    modLoaders.add(loaderId)
+    type = STABLE
+
+    // 验证管线而不上传：-Ppublish.dryRun=true
+    dryRun = providers.gradleProperty("publish.dryRun").map { it.toBoolean() }.orElse(false)
+
+    changelog = providers.environmentVariable("CHANGELOG")
+        .orElse(providers.provider { rootProject.file("CHANGELOG.md").takeIf { it.exists() }?.readText() })
+        .orElse("See https://github.com/Tonywww2/Reload-Only-Recipes/releases")
+
+    curseforge {
+        projectId = providers.gradleProperty("curseforge.projectId")
+        accessToken = providers.environmentVariable("CURSEFORGE_TOKEN")
+            .orElse(providers.gradleProperty("curseforge.token"))
+        minecraftVersions.add(mcVersion)
+        javaVersions.add(JavaVersion.toVersion(javaVersion))
+        // 同步配方需双端：服务端重建配方，客户端刷新显示。CurseForge（插件 2.x）至少需声明一个环境。
+        client = true
+        server = true
+    }
 }

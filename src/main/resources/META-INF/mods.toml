@@ -9,6 +9,7 @@ config = "reloadonlyrecipes.mixins.json"
 modId = "${id}"
 version = "${version}"
 displayName = "${name}"
+authors = "${authors}"
 
 [[dependencies.${id}]]
 modId = "forge"
